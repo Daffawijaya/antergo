@@ -9,6 +9,36 @@ class Order extends Model
 {
     use HasFactory;
 
+    public const TYPE_RIDE = 'ride';
+
+    public const TYPE_SEND = 'send';
+
+    public const TYPE_FOOD = 'food';
+
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_SEARCHING_DRIVER = 'searching_driver';
+
+    public const STATUS_DRIVER_ASSIGNED = 'driver_assigned';
+
+    public const STATUS_DRIVER_ARRIVED = 'driver_arrived';
+
+    public const STATUS_MERCHANT_CONFIRMED = 'merchant_confirmed';
+
+    public const STATUS_PREPARING = 'preparing';
+
+    public const STATUS_READY_FOR_PICKUP = 'ready_for_pickup';
+
+    public const STATUS_PICKED_UP = 'picked_up';
+
+    public const STATUS_IN_PROGRESS = 'in_progress';
+
+    public const STATUS_DELIVERING = 'delivering';
+
+    public const STATUS_COMPLETED = 'completed';
+
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $table = 'orders';
 
     protected $fillable = [

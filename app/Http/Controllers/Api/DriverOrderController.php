@@ -19,13 +19,13 @@ class DriverOrderController extends Controller
             ->with('location')
             ->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver is not online or not approved.',
             ], 403);
         }
 
-        if (!$driver->location) {
+        if (! $driver->location) {
             return response()->json([
                 'message' => 'Driver location is not available.',
             ], 422);
@@ -35,8 +35,15 @@ class DriverOrderController extends Controller
         $driverLongitude = (float) $driver->location->longitude;
 
         $orders = Order::query()
-            ->where('status', 'searching_driver')
-            ->where('type', 'ride')
+            ->where(function ($query) {
+                $query->where(function ($query) {
+                    $query->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND])
+                        ->where('status', Order::STATUS_SEARCHING_DRIVER);
+                })->orWhere(function ($query) {
+                    $query->where('type', Order::TYPE_FOOD)
+                        ->where('status', Order::STATUS_READY_FOR_PICKUP);
+                });
+            })
             ->whereNull('driver_id')
             ->latest()
             ->get();
@@ -57,7 +64,7 @@ class DriverOrderController extends Controller
 
                 return $order;
             })
-            ->filter(fn(Order $order) => $order->pickup_distance <= 10)
+            ->filter(fn (Order $order) => $order->pickup_distance <= 10)
             ->sortBy('pickup_distance')
             ->values();
 
@@ -73,7 +80,7 @@ class DriverOrderController extends Controller
             ->where('is_online', true)
             ->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver is not online or not approved.',
             ], 403);
@@ -84,14 +91,18 @@ class DriverOrderController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if (!$lockedOrder) {
+            if (! $lockedOrder) {
                 return [
                     'error' => 'Order not found.',
                     'status' => 404,
                 ];
             }
 
-            if ($lockedOrder->status !== 'searching_driver') {
+            $expectedStatus = $lockedOrder->type === Order::TYPE_FOOD
+                ? Order::STATUS_READY_FOR_PICKUP
+                : Order::STATUS_SEARCHING_DRIVER;
+
+            if ($lockedOrder->status !== $expectedStatus) {
                 return [
                     'error' => 'This order has already been taken or is no longer available.',
                     'status' => 422,
@@ -107,11 +118,11 @@ class DriverOrderController extends Controller
 
             $lockedOrder->update([
                 'driver_id' => $driver->id,
-                'status' => 'driver_assigned',
+                'status' => Order::STATUS_DRIVER_ASSIGNED,
             ]);
 
             $lockedOrder->statusHistories()->create([
-                'status' => 'driver_assigned',
+                'status' => Order::STATUS_DRIVER_ASSIGNED,
                 'note' => 'Order accepted by driver.',
                 'created_at' => now(),
             ]);

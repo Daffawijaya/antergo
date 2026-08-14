@@ -12,7 +12,8 @@ class ProductController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = Product::with('merchant')
-            ->where('is_available', true);
+            ->where('is_available', true)
+            ->whereHas('merchant', fn ($query) => $query->where('is_active', true));
 
         if ($request->filled('merchant_id')) {
             $query->where('merchant_id', $request->integer('merchant_id'));
@@ -35,7 +36,7 @@ class ProductController extends Controller
 
     public function show(Product $product): JsonResponse
     {
-        if (!$product->is_available) {
+        if (! $product->is_available || ! $product->merchant?->is_active) {
             return response()->json([
                 'message' => 'Product not found.',
             ], 404);
@@ -51,13 +52,13 @@ class ProductController extends Controller
         $merchant = $request->user()
             ->merchant;
 
-        if (!$merchant) {
+        if (! $merchant) {
             return response()->json([
                 'message' => 'Merchant not found.',
             ], 404);
         }
 
-        if (!$merchant->is_active) {
+        if (! $merchant->is_active) {
             return response()->json([
                 'message' => 'Merchant is inactive.',
             ], 422);
@@ -67,7 +68,8 @@ class ProductController extends Controller
             'name' => ['required', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:1000'],
             'price' => ['required', 'numeric', 'min:0'],
-            'unit' => ['nullable', 'string', 'max:50'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'image' => ['nullable', 'string', 'max:2048'],
             'is_available' => ['nullable', 'boolean'],
         ]);
 
@@ -75,7 +77,8 @@ class ProductController extends Controller
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
             'price' => $validated['price'],
-            'unit' => $validated['unit'] ?? null,
+            'stock' => $validated['stock'],
+            'image' => $validated['image'] ?? null,
             'is_available' => $validated['is_available'] ?? true,
         ]);
 
@@ -91,7 +94,7 @@ class ProductController extends Controller
     ): JsonResponse {
         $merchant = $request->user()->merchant;
 
-        if (!$merchant || $product->merchant_id !== $merchant->id) {
+        if (! $merchant || $product->merchant_id !== $merchant->id) {
             return response()->json([
                 'message' => 'Product not found.',
             ], 404);
@@ -101,7 +104,8 @@ class ProductController extends Controller
             'name' => ['sometimes', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:1000'],
             'price' => ['sometimes', 'numeric', 'min:0'],
-            'unit' => ['nullable', 'string', 'max:50'],
+            'stock' => ['sometimes', 'integer', 'min:0'],
+            'image' => ['nullable', 'string', 'max:2048'],
             'is_available' => ['sometimes', 'boolean'],
         ]);
 
@@ -119,16 +123,18 @@ class ProductController extends Controller
     ): JsonResponse {
         $merchant = $request->user()->merchant;
 
-        if (!$merchant || $product->merchant_id !== $merchant->id) {
+        if (! $merchant || $product->merchant_id !== $merchant->id) {
             return response()->json([
                 'message' => 'Product not found.',
             ], 404);
         }
 
-        $product->delete();
+        // order_items keeps a restricted FK to products so historical snapshots
+        // remain valid. Removing a catalog item therefore means deactivating it.
+        $product->update(['is_available' => false]);
 
         return response()->json([
-            'message' => 'Product deleted successfully.',
+            'message' => 'Product removed from the catalog successfully.',
         ]);
     }
 }

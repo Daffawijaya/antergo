@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Driver;
 use App\Models\Order;
+use App\Models\Product;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,7 +14,9 @@ use Illuminate\Support\Str;
 class OrderController extends Controller
 {
     private const BASE_FARE = 5000;
+
     private const PRICE_PER_KM = 2500;
+
     private const MINIMUM_FARE = 10000;
 
     public function store(Request $request): JsonResponse
@@ -44,11 +48,11 @@ class OrderController extends Controller
             $totalPrice
         ) {
             $order = Order::create([
-                'order_number' => 'AG-' . strtoupper(Str::random(10)),
+                'order_number' => 'AG-'.strtoupper(Str::random(10)),
                 'user_id' => $request->user()->id,
                 'driver_id' => null,
                 'merchant_id' => null,
-                'type' => 'ride',
+                'type' => Order::TYPE_RIDE,
                 'pickup_address' => $validated['pickup_address'],
                 'pickup_latitude' => $validated['pickup_latitude'],
                 'pickup_longitude' => $validated['pickup_longitude'],
@@ -63,12 +67,12 @@ class OrderController extends Controller
                 'total_price' => $totalPrice,
                 'payment_method' => 'cash',
                 'payment_status' => 'pending',
-                'status' => 'searching_driver',
+                'status' => Order::STATUS_SEARCHING_DRIVER,
                 'notes' => $validated['notes'] ?? null,
             ]);
 
             $order->statusHistories()->create([
-                'status' => 'searching_driver',
+                'status' => Order::STATUS_SEARCHING_DRIVER,
                 'note' => 'Customer created a ride request.',
                 'created_at' => now(),
             ]);
@@ -105,10 +109,13 @@ class OrderController extends Controller
 
     public function show(Request $request, Order $order): JsonResponse
     {
-        if (
-            $order->user_id !== $request->user()->id &&
-            $order->driver?->user_id !== $request->user()->id
-        ) {
+        $user = $request->user();
+        $canView = $order->user_id === $user->id
+            || $order->driver?->user_id === $user->id
+            || $order->merchant?->user_id === $user->id
+            || $user->role === 'admin';
+
+        if (! $canView) {
             return response()->json([
                 'message' => 'Order not found.',
             ], 404);
@@ -137,10 +144,11 @@ class OrderController extends Controller
             ], 404);
         }
 
-        if (!in_array($order->status, [
-            'searching_driver',
-            'driver_assigned',
-        ], true)) {
+        $cancellableStatuses = $order->type === Order::TYPE_FOOD
+            ? [Order::STATUS_PENDING]
+            : [Order::STATUS_SEARCHING_DRIVER, Order::STATUS_DRIVER_ASSIGNED];
+
+        if (! in_array($order->status, $cancellableStatuses, true)) {
             return response()->json([
                 'message' => 'This order cannot be cancelled.',
             ], 422);
@@ -150,16 +158,35 @@ class OrderController extends Controller
             'cancelled_reason' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $order->update([
-            'status' => 'cancelled',
-            'cancelled_reason' => $validated['cancelled_reason'] ?? null,
-        ]);
+        DB::transaction(function () use ($order, $validated) {
+            $lockedOrder = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            $cancellableStatuses = $lockedOrder->type === Order::TYPE_FOOD
+                ? [Order::STATUS_PENDING]
+                : [Order::STATUS_SEARCHING_DRIVER, Order::STATUS_DRIVER_ASSIGNED];
 
-        $order->statusHistories()->create([
-            'status' => 'cancelled',
-            'note' => $validated['cancelled_reason'] ?? 'Cancelled by customer.',
-            'created_at' => now(),
-        ]);
+            if (! in_array($lockedOrder->status, $cancellableStatuses, true)) {
+                abort(422, 'This order cannot be cancelled.');
+            }
+
+            if ($lockedOrder->type === Order::TYPE_FOOD) {
+                $lockedOrder->load('items');
+                foreach ($lockedOrder->items as $item) {
+                    Product::whereKey($item->product_id)
+                        ->increment('stock', $item->quantity);
+                }
+            }
+
+            $lockedOrder->update([
+                'status' => Order::STATUS_CANCELLED,
+                'cancelled_reason' => $validated['cancelled_reason'] ?? null,
+            ]);
+
+            $lockedOrder->statusHistories()->create([
+                'status' => Order::STATUS_CANCELLED,
+                'note' => $validated['cancelled_reason'] ?? 'Cancelled by customer.',
+                'created_at' => now(),
+            ]);
+        });
 
         return response()->json([
             'message' => 'Order cancelled successfully.',
@@ -169,10 +196,10 @@ class OrderController extends Controller
 
     public function status(Request $request, Order $order): JsonResponse
     {
-        $driver = \App\Models\Driver::where('user_id', $request->user()->id)
+        $driver = Driver::where('user_id', $request->user()->id)
             ->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver profile not found.',
             ], 404);
@@ -187,43 +214,67 @@ class OrderController extends Controller
         $validated = $request->validate([
             'status' => [
                 'required',
-                'in:driver_arrived,trip_started,completed',
+                'in:driver_arrived,in_progress,picked_up,delivering,completed',
             ],
         ]);
 
         $currentStatus = $order->status;
         $newStatus = $validated['status'];
 
-        $allowedTransitions = [
-            'driver_assigned' => ['driver_arrived'],
-            'driver_arrived' => ['trip_started'],
-            'trip_started' => ['completed'],
-        ];
+        $allowedTransitions = $order->type === Order::TYPE_FOOD
+            ? [
+                Order::STATUS_DRIVER_ASSIGNED => [Order::STATUS_PICKED_UP],
+                Order::STATUS_PICKED_UP => [Order::STATUS_DELIVERING],
+                Order::STATUS_DELIVERING => [Order::STATUS_COMPLETED],
+            ]
+            : [
+                Order::STATUS_DRIVER_ASSIGNED => [Order::STATUS_DRIVER_ARRIVED],
+                Order::STATUS_DRIVER_ARRIVED => [Order::STATUS_IN_PROGRESS],
+                Order::STATUS_IN_PROGRESS => [Order::STATUS_COMPLETED],
+            ];
 
         if (
-            !isset($allowedTransitions[$currentStatus]) ||
-            !in_array($newStatus, $allowedTransitions[$currentStatus], true)
+            ! isset($allowedTransitions[$currentStatus]) ||
+            ! in_array($newStatus, $allowedTransitions[$currentStatus], true)
         ) {
             return response()->json([
                 'message' => "Cannot change order status from {$currentStatus} to {$newStatus}.",
             ], 422);
         }
 
-        $order->update([
-            'status' => $newStatus,
-        ]);
-
         $notes = [
             'driver_arrived' => 'Driver has arrived at pickup location.',
-            'trip_started' => 'Trip has started.',
-            'completed' => 'Trip completed successfully.',
+            'in_progress' => 'Trip has started.',
+            'picked_up' => 'Order has been picked up from the merchant.',
+            'delivering' => 'Order is being delivered.',
+            'completed' => $order->type === Order::TYPE_FOOD
+                ? 'Food order delivered successfully.'
+                : 'Trip completed successfully.',
         ];
 
-        $order->statusHistories()->create([
-            'status' => $newStatus,
-            'note' => $notes[$newStatus],
-            'created_at' => now(),
-        ]);
+        DB::transaction(function () use ($order, $currentStatus, $newStatus, $allowedTransitions, $notes, $driver) {
+            $lockedOrder = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            if ($lockedOrder->status !== $currentStatus
+                || ! in_array($newStatus, $allowedTransitions[$lockedOrder->status] ?? [], true)) {
+                abort(422, 'The order status changed. Please refresh and try again.');
+            }
+
+            $lockedOrder->update([
+                'status' => $newStatus,
+                'completed_at' => $newStatus === Order::STATUS_COMPLETED ? now() : null,
+            ]);
+
+            $lockedOrder->statusHistories()->create([
+                'status' => $newStatus,
+                'note' => $notes[$newStatus],
+                'created_at' => now(),
+            ]);
+
+            if ($newStatus === Order::STATUS_COMPLETED) {
+                $driver->increment('total_completed_orders');
+            }
+        });
 
         return response()->json([
             'message' => 'Order status updated successfully.',

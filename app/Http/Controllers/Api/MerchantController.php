@@ -22,7 +22,7 @@ class MerchantController extends Controller
 
     public function show(Merchant $merchant): JsonResponse
     {
-        if (!$merchant->is_active) {
+        if (! $merchant->is_active) {
             return response()->json([
                 'message' => 'Merchant not found.',
             ], 404);
@@ -31,7 +31,7 @@ class MerchantController extends Controller
         return response()->json([
             'merchant' => $merchant->load([
                 'category',
-                'products',
+                'products' => fn ($query) => $query->where('is_available', true),
             ]),
         ]);
     }
@@ -88,7 +88,7 @@ class MerchantController extends Controller
             ->where('user_id', $request->user()->id)
             ->first();
 
-        if (!$merchant) {
+        if (! $merchant) {
             return response()->json([
                 'message' => 'Merchant not found.',
             ], 404);
@@ -106,13 +106,13 @@ class MerchantController extends Controller
             $request->user()->id
         )->first();
 
-        if (!$merchant) {
+        if (! $merchant) {
             return response()->json([
                 'message' => 'Merchant not found.',
             ], 404);
         }
 
-        if (!$merchant->is_active) {
+        if (! $merchant->is_active) {
             return response()->json([
                 'message' => 'Merchant is inactive.',
             ], 422);
@@ -135,7 +135,7 @@ class MerchantController extends Controller
             $request->user()->id
         )->first();
 
-        if (!$merchant) {
+        if (! $merchant) {
             return response()->json([
                 'message' => 'Merchant not found.',
             ], 404);

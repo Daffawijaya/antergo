@@ -17,7 +17,7 @@ class DriverController extends Controller
             'location',
         ])->where('user_id', $request->user()->id)->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver profile not found.',
             ], 404);
@@ -32,7 +32,7 @@ class DriverController extends Controller
     {
         $driver = Driver::where('user_id', $request->user()->id)->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver profile not found.',
             ], 404);
@@ -58,7 +58,7 @@ class DriverController extends Controller
     {
         $driver = Driver::where('user_id', $request->user()->id)->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver profile not found.',
             ], 404);
@@ -85,7 +85,7 @@ class DriverController extends Controller
 
         $driver = Driver::where('user_id', $request->user()->id)->first();
 
-        if (!$driver) {
+        if (! $driver) {
             return response()->json([
                 'message' => 'Driver profile not found.',
             ], 404);
@@ -97,7 +97,7 @@ class DriverController extends Controller
             ], 403);
         }
 
-        if (!$driver->is_online) {
+        if (! $driver->is_online) {
             return response()->json([
                 'message' => 'Driver is offline.',
             ], 403);
