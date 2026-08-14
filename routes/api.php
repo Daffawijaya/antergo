@@ -30,6 +30,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/push-tokens', [PushNotificationController::class, 'unregisterToken']);
     Route::get('/notifications', [PushNotificationController::class, 'index']);
 });
+Route::middleware('auth:sanctum')->get('/driver/application', [DriverController::class, 'application']);
+Route::middleware('auth:sanctum')->post('/driver/application', [DriverController::class, 'apply']);
+
 Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver')->group(function () {
     Route::get('/profile', [DriverController::class, 'profile']);
     Route::post('/online', [DriverController::class, 'online']);
@@ -70,6 +73,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->prefix('food/orders')->gro
 
 Route::middleware(['auth:sanctum', 'role:customer'])->post('/shopping/orders', [FoodOrderController::class, 'storeShopping']);
 
+Route::get('/merchant-categories', [MerchantController::class, 'categories']);
 Route::get('/merchants', [MerchantController::class, 'index']);
 Route::get('/merchants/{merchant}', [MerchantController::class, 'show']);
 

@@ -4,12 +4,20 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Merchant;
+use App\Models\MerchantCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class MerchantController extends Controller
 {
+    public function categories(): JsonResponse
+    {
+        return response()->json([
+            'categories' => MerchantCategory::query()->orderBy('name')->get(['id', 'name', 'slug']),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $merchants = Merchant::with('category')
@@ -41,7 +49,7 @@ class MerchantController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'category_id' => ['required', 'integer', 'exists:merchant_categories,id'],
+            'category_id' => ['nullable', 'integer', 'exists:merchant_categories,id'],
             'name' => ['required', 'string', 'max:150'],
             'description' => ['nullable', 'string', 'max:1000'],
             'phone' => ['required', 'string', 'max:20'],

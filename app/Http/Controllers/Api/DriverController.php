@@ -6,9 +6,60 @@ use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DriverController extends Controller
 {
+    public function application(Request $request): JsonResponse
+    {
+        $driver = Driver::with('vehicle')
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        return response()->json(['driver' => $driver]);
+    }
+
+    public function apply(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'nik' => ['required', 'digits:16', 'unique:drivers,nik'],
+            'license_number' => ['required', 'string', 'max:50', 'unique:drivers,license_number'],
+            'vehicle_type' => ['required', 'in:motorcycle,car'],
+            'brand' => ['required', 'string', 'max:100'],
+            'model' => ['nullable', 'string', 'max:100'],
+            'plate_number' => ['required', 'string', 'max:20', 'unique:vehicles,plate_number'],
+            'color' => ['nullable', 'string', 'max:50'],
+        ]);
+
+        if ($request->user()->driver()->exists()) {
+            return response()->json(['message' => 'You already have a driver application.'], 422);
+        }
+
+        $driver = DB::transaction(function () use ($request, $validated) {
+            $driver = Driver::create([
+                'user_id' => $request->user()->id,
+                'nik' => $validated['nik'],
+                'license_number' => $validated['license_number'],
+                'status' => 'pending',
+                'is_online' => false,
+            ]);
+            $driver->vehicle()->create([
+                'type' => $validated['vehicle_type'],
+                'brand' => $validated['brand'],
+                'model' => $validated['model'] ?? null,
+                'plate_number' => strtoupper($validated['plate_number']),
+                'color' => $validated['color'] ?? null,
+            ]);
+
+            return $driver;
+        });
+
+        return response()->json([
+            'message' => 'Driver application submitted successfully.',
+            'driver' => $driver->load('vehicle'),
+        ], 201);
+    }
+
     public function profile(Request $request): JsonResponse
     {
         $driver = Driver::with([
