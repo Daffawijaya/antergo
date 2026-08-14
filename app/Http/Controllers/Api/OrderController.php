@@ -15,9 +15,7 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
-    public function __construct(private readonly OrderPricingService $pricing)
-    {
-    }
+    public function __construct(private readonly OrderPricingService $pricing) {}
 
     public function store(Request $request): JsonResponse
     {
@@ -30,6 +28,7 @@ class OrderController extends Controller
             'destination_longitude' => ['required', 'numeric', 'between:-180,180'],
             'estimated_duration' => ['nullable', 'integer', 'min:0'],
             'notes' => ['nullable', 'string', 'max:500'],
+            'service_type' => ['sometimes', 'in:bike,car'],
         ]);
 
         $distance = $this->pricing->distance(
@@ -39,13 +38,17 @@ class OrderController extends Controller
             (float) $validated['destination_longitude']
         );
 
-        $totalPrice = $this->pricing->rideFare($distance);
+        $serviceVariant = $validated['service_type'] ?? Order::VARIANT_BIKE;
+        $vehicleType = $serviceVariant === Order::VARIANT_CAR ? 'car' : 'motorcycle';
+        $totalPrice = $this->pricing->rideFare($distance, $serviceVariant);
 
         $order = DB::transaction(function () use (
             $request,
             $validated,
             $distance,
-            $totalPrice
+            $totalPrice,
+            $serviceVariant,
+            $vehicleType
         ) {
             $order = Order::create([
                 'order_number' => 'AG-'.strtoupper(Str::random(10)),
@@ -53,6 +56,8 @@ class OrderController extends Controller
                 'driver_id' => null,
                 'merchant_id' => null,
                 'type' => Order::TYPE_RIDE,
+                'service_variant' => $serviceVariant,
+                'vehicle_type' => $vehicleType,
                 'pickup_address' => $validated['pickup_address'],
                 'pickup_latitude' => $validated['pickup_latitude'],
                 'pickup_longitude' => $validated['pickup_longitude'],
@@ -89,7 +94,7 @@ class OrderController extends Controller
         return response()->json([
             'message' => 'Ride request created successfully.',
             'order' => $order->load(['payment', 'statusHistories']),
-            'fare' => $this->pricing->rideBreakdown($distance),
+            'fare' => $this->pricing->rideBreakdown($distance, $serviceVariant),
 
         ], 201);
     }

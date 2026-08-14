@@ -12,9 +12,7 @@ use Illuminate\Support\Str;
 
 class SendOrderController extends Controller
 {
-    public function __construct(private readonly OrderPricingService $pricing)
-    {
-    }
+    public function __construct(private readonly OrderPricingService $pricing) {}
 
     public function store(Request $request): JsonResponse
     {
@@ -31,7 +29,10 @@ class SendOrderController extends Controller
             'recipient_phone' => ['required', 'string', 'max:30'],
             'notes' => ['nullable', 'string', 'max:500'],
             'payment_method' => ['sometimes', 'in:cash'],
+            'vehicle_type' => ['sometimes', 'in:motorcycle,car'],
         ]);
+
+        $validated['vehicle_type'] ??= 'motorcycle';
 
         $distance = $this->pricing->distance(
             (float) $validated['pickup_latitude'],
@@ -39,13 +40,15 @@ class SendOrderController extends Controller
             (float) $validated['destination_latitude'],
             (float) $validated['destination_longitude'],
         );
-        $total = $this->pricing->sendFare($distance);
+        $total = $this->pricing->sendFare($distance, $validated['vehicle_type']);
 
         $order = DB::transaction(function () use ($request, $validated, $distance, $total) {
             $order = Order::create([
                 'order_number' => 'AGS-'.strtoupper(Str::random(10)),
                 'user_id' => $request->user()->id,
                 'type' => Order::TYPE_SEND,
+                'service_variant' => Order::VARIANT_DELIVERY,
+                'vehicle_type' => $validated['vehicle_type'],
                 'pickup_address' => $validated['pickup_address'],
                 'pickup_latitude' => $validated['pickup_latitude'],
                 'pickup_longitude' => $validated['pickup_longitude'],
@@ -72,7 +75,7 @@ class SendOrderController extends Controller
 
             $order->statusHistories()->create([
                 'status' => Order::STATUS_SEARCHING_DRIVER,
-                'note' => 'Customer created a Send request.',
+                'note' => 'Customer created a Delivery request.',
                 'created_at' => now(),
             ]);
             $order->payment()->create(['method' => 'cash', 'status' => 'pending', 'amount' => $total]);
@@ -81,9 +84,9 @@ class SendOrderController extends Controller
         }, 3);
 
         return response()->json([
-            'message' => 'Send request created successfully.',
+            'message' => 'Delivery request created successfully.',
             'order' => $order->load(['payment', 'statusHistories']),
-            'fare' => $this->pricing->sendBreakdown($distance),
+            'fare' => $this->pricing->sendBreakdown($distance, $validated['vehicle_type']),
         ], 201);
     }
 }

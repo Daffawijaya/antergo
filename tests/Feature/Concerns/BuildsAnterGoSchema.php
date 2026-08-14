@@ -87,6 +87,7 @@ trait BuildsAnterGoSchema
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->foreignId('merchant_id')->constrained()->cascadeOnDelete();
+            $table->string('product_type')->default('food');
             $table->string('name');
             $table->text('description')->nullable();
             $table->decimal('price', 15, 2)->default(0);
@@ -103,6 +104,8 @@ trait BuildsAnterGoSchema
             $table->foreignId('driver_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('merchant_id')->nullable()->constrained()->nullOnDelete();
             $table->enum('type', ['ride', 'send', 'food'])->default('ride');
+            $table->string('service_variant')->nullable();
+            $table->string('vehicle_type')->nullable();
             $table->text('pickup_address');
             $table->decimal('pickup_latitude', 10, 7);
             $table->decimal('pickup_longitude', 10, 7);

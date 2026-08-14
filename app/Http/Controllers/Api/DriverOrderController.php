@@ -89,7 +89,7 @@ class DriverOrderController extends Controller
         $driver = Driver::where('user_id', $request->user()->id)
             ->where('status', 'approved')
             ->where('is_online', true)
-            ->with('location')
+            ->with(['location', 'vehicle'])
             ->first();
 
         if (! $driver) {
@@ -126,6 +126,7 @@ class DriverOrderController extends Controller
                 });
             })
             ->whereNull('driver_id')
+            ->when($driver->vehicle?->type, fn ($query, $vehicleType) => $query->where(fn ($orders) => $orders->whereNull('vehicle_type')->orWhere('vehicle_type', $vehicleType)))
             ->latest()
             ->get();
 
@@ -186,6 +187,13 @@ class DriverOrderController extends Controller
             if ($lockedOrder->status !== $expectedStatus) {
                 return [
                     'error' => 'This order has already been taken or is no longer available.',
+                    'status' => 422,
+                ];
+            }
+
+            if ($lockedOrder->vehicle_type !== null && $driver->vehicle?->type !== null && $driver->vehicle->type !== $lockedOrder->vehicle_type) {
+                return [
+                    'error' => 'This order requires a different vehicle type.',
                     'status' => 422,
                 ];
             }

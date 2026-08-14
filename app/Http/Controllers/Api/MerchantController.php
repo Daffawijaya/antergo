@@ -10,9 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 class MerchantController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $merchants = Merchant::with('category')
+            ->when($request->filled('product_type'), fn ($query) => $query->whereHas('products', fn ($products) => $products->where('product_type', $request->string('product_type')->toString())->where('is_available', true)))
             ->where('is_active', true)
             ->where('is_open', true)
             ->latest()
@@ -21,7 +22,7 @@ class MerchantController extends Controller
         return response()->json($merchants);
     }
 
-    public function show(Merchant $merchant): JsonResponse
+    public function show(Request $request, Merchant $merchant): JsonResponse
     {
         if (! $merchant->is_active) {
             return response()->json([
@@ -32,7 +33,7 @@ class MerchantController extends Controller
         return response()->json([
             'merchant' => $merchant->load([
                 'category',
-                'products' => fn ($query) => $query->where('is_available', true),
+                'products' => fn ($query) => $query->where('is_available', true)->when($request->filled('product_type'), fn ($products) => $products->where('product_type', $request->string('product_type')->toString())),
             ]),
         ]);
     }

@@ -23,6 +23,13 @@ class FoodOrderController extends Controller
 
     private const SERVICE_FEE = 1000;
 
+    public function storeShopping(Request $request): JsonResponse
+    {
+        $request->merge(['service_type' => Order::VARIANT_SHOPPING]);
+
+        return $this->store($request);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -35,9 +42,13 @@ class FoodOrderController extends Controller
             'destination_longitude' => ['required', 'numeric', 'between:-180,180'],
             'payment_method' => ['sometimes', 'in:cash'],
             'notes' => ['nullable', 'string', 'max:500'],
+            'service_type' => ['sometimes', 'in:food,shopping'],
         ]);
 
-        $order = DB::transaction(function () use ($request, $validated) {
+        $serviceVariant = $validated['service_type'] ?? Order::VARIANT_FOOD;
+        $requiredProductType = $serviceVariant === Order::VARIANT_SHOPPING ? 'goods' : 'food';
+
+        $order = DB::transaction(function () use ($request, $validated, $serviceVariant, $requiredProductType) {
             $merchant = Merchant::whereKey($validated['merchant_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -75,7 +86,7 @@ class FoodOrderController extends Controller
                 $product = $products->get($productId);
                 $quantity = (int) $requestedItems->get($productId)['quantity'];
 
-                if ($product->merchant_id !== $merchant->id || ! $product->is_available) {
+                if ($product->merchant_id !== $merchant->id || ! $product->is_available || $product->product_type !== $requiredProductType) {
                     throw ValidationException::withMessages([
                         'items' => ["Product {$productId} is not available from this merchant."],
                     ]);
@@ -114,6 +125,8 @@ class FoodOrderController extends Controller
                 'user_id' => $request->user()->id,
                 'merchant_id' => $merchant->id,
                 'type' => Order::TYPE_FOOD,
+                'service_variant' => $serviceVariant,
+                'vehicle_type' => 'motorcycle',
                 'pickup_address' => $merchant->address,
                 'pickup_latitude' => $merchant->latitude,
                 'pickup_longitude' => $merchant->longitude,
@@ -134,7 +147,7 @@ class FoodOrderController extends Controller
             $order->items()->createMany($snapshots);
             $order->statusHistories()->create([
                 'status' => Order::STATUS_PENDING,
-                'note' => 'Food order created and awaiting merchant confirmation.',
+                'note' => ucfirst($serviceVariant).' order created and awaiting merchant confirmation.',
                 'created_at' => now(),
             ]);
 
@@ -150,7 +163,7 @@ class FoodOrderController extends Controller
         app(OrderPushNotificationService::class)->foodCreated($order);
 
         return response()->json([
-            'message' => 'Food order created successfully.',
+            'message' => ucfirst($serviceVariant).' order created successfully.',
             'order' => $order->load(['merchant', 'items', 'payment', 'statusHistories']),
         ], 201);
     }

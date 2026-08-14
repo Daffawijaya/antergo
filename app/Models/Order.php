@@ -16,6 +16,16 @@ class Order extends Model
 
     public const TYPE_FOOD = 'food';
 
+    public const VARIANT_BIKE = 'bike';
+
+    public const VARIANT_CAR = 'car';
+
+    public const VARIANT_DELIVERY = 'delivery';
+
+    public const VARIANT_FOOD = 'food';
+
+    public const VARIANT_SHOPPING = 'shopping';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_SEARCHING_DRIVER = 'searching_driver';
@@ -50,6 +60,8 @@ class Order extends Model
         'driver_id',
         'merchant_id',
         'type',
+        'service_variant',
+        'vehicle_type',
         'pickup_address',
         'pickup_latitude',
         'pickup_longitude',

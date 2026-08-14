@@ -68,6 +68,8 @@ Route::middleware(['auth:sanctum', 'role:customer'])->prefix('food/orders')->gro
     Route::post('/', [FoodOrderController::class, 'store']);
 });
 
+Route::middleware(['auth:sanctum', 'role:customer'])->post('/shopping/orders', [FoodOrderController::class, 'storeShopping']);
+
 Route::get('/merchants', [MerchantController::class, 'index']);
 Route::get('/merchants/{merchant}', [MerchantController::class, 'show']);
 
@@ -97,6 +99,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::get('/drivers', [AdminController::class, 'drivers']);
     Route::get('/drivers/{driver}', [AdminController::class, 'driver']);
     Route::patch('/drivers/{driver}/status', [AdminController::class, 'updateDriverStatus']);
+
     Route::get('/merchants', [AdminController::class, 'merchants']);
     Route::get('/merchants/{merchant}', [AdminController::class, 'merchant']);
     Route::patch('/merchants/{merchant}/status', [AdminController::class, 'updateMerchantStatus']);

@@ -15,6 +15,10 @@ class ProductController extends Controller
             ->where('is_available', true)
             ->whereHas('merchant', fn ($query) => $query->where('is_active', true));
 
+        if ($request->filled('product_type')) {
+            $query->where('product_type', $request->string('product_type')->toString());
+        }
+
         if ($request->filled('merchant_id')) {
             $query->where('merchant_id', $request->integer('merchant_id'));
         }
@@ -66,6 +70,7 @@ class ProductController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
+            'product_type' => ['sometimes', 'in:food,goods'],
             'description' => ['nullable', 'string', 'max:1000'],
             'price' => ['required', 'numeric', 'min:0'],
             'stock' => ['required', 'integer', 'min:0'],
@@ -75,6 +80,7 @@ class ProductController extends Controller
 
         $product = $merchant->products()->create([
             'name' => $validated['name'],
+            'product_type' => $validated['product_type'] ?? 'food',
             'description' => $validated['description'] ?? null,
             'price' => $validated['price'],
             'stock' => $validated['stock'],
@@ -102,6 +108,7 @@ class ProductController extends Controller
 
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:150'],
+            'product_type' => ['sometimes', 'in:food,goods'],
             'description' => ['nullable', 'string', 'max:1000'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'stock' => ['sometimes', 'integer', 'min:0'],

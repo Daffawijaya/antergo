@@ -2,58 +2,55 @@
 
 namespace App\Services;
 
+use App\Models\Order;
+
 class OrderPricingService
 {
-    private const RIDE_BASE_FARE = 5000;
-    private const RIDE_PRICE_PER_KM = 2500;
-    private const RIDE_MINIMUM_FARE = 10000;
-    private const SEND_BASE_FARE = 7000;
-    private const SEND_PRICE_PER_KM = 2500;
-    private const SEND_MINIMUM_FARE = 12000;
+    private const BIKE = [5000, 2500, 10000];
+
+    private const CAR = [10000, 4500, 20000];
+
+    private const DELIVERY_MOTORCYCLE = [7000, 2500, 12000];
+
+    private const DELIVERY_CAR = [12000, 4500, 22000];
 
     public function distance(float $latitude1, float $longitude1, float $latitude2, float $longitude2): float
     {
         $earthRadius = 6371;
         $latitudeDifference = deg2rad($latitude2 - $latitude1);
         $longitudeDifference = deg2rad($longitude2 - $longitude1);
-        $a = sin($latitudeDifference / 2) ** 2
-            + cos(deg2rad($latitude1)) * cos(deg2rad($latitude2))
-            * sin($longitudeDifference / 2) ** 2;
+        $a = sin($latitudeDifference / 2) ** 2 + cos(deg2rad($latitude1)) * cos(deg2rad($latitude2)) * sin($longitudeDifference / 2) ** 2;
 
         return $earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a));
     }
 
-    public function rideFare(float $distance): int
+    public function rideFare(float $distance, string $variant = Order::VARIANT_BIKE): int
     {
-        return $this->roundedFare(self::RIDE_BASE_FARE, self::RIDE_PRICE_PER_KM, self::RIDE_MINIMUM_FARE, $distance);
+        return $this->fare($variant === Order::VARIANT_CAR ? self::CAR : self::BIKE, $distance);
     }
 
-    public function sendFare(float $distance): int
+    public function sendFare(float $distance, string $vehicleType = 'motorcycle'): int
     {
-        return $this->roundedFare(self::SEND_BASE_FARE, self::SEND_PRICE_PER_KM, self::SEND_MINIMUM_FARE, $distance);
+        return $this->fare($vehicleType === 'car' ? self::DELIVERY_CAR : self::DELIVERY_MOTORCYCLE, $distance);
     }
 
-    public function rideBreakdown(float $distance): array
+    public function rideBreakdown(float $distance, string $variant = Order::VARIANT_BIKE): array
     {
-        return [
-            'base_fare' => self::RIDE_BASE_FARE,
-            'price_per_km' => self::RIDE_PRICE_PER_KM,
-            'distance_km' => round($distance, 2),
-            'total' => $this->rideFare($distance),
-        ];
-    }
-    public function sendBreakdown(float $distance): array
-    {
-        return [
-            'base_fare' => self::SEND_BASE_FARE,
-            'price_per_km' => self::SEND_PRICE_PER_KM,
-            'distance_km' => round($distance, 2),
-            'total' => $this->sendFare($distance),
-        ];
+        return $this->breakdown($variant === Order::VARIANT_CAR ? self::CAR : self::BIKE, $distance);
     }
 
-    private function roundedFare(int $base, int $perKm, int $minimum, float $distance): int
+    public function sendBreakdown(float $distance, string $vehicleType = 'motorcycle'): array
     {
-        return (int) max($minimum, round(($base + ($distance * $perKm)) / 500) * 500);
+        return $this->breakdown($vehicleType === 'car' ? self::DELIVERY_CAR : self::DELIVERY_MOTORCYCLE, $distance);
+    }
+
+    private function fare(array $pricing, float $distance): int
+    {
+        return (int) max($pricing[2], round(($pricing[0] + ($distance * $pricing[1])) / 500) * 500);
+    }
+
+    private function breakdown(array $pricing, float $distance): array
+    {
+        return ['base_fare' => $pricing[0], 'price_per_km' => $pricing[1], 'distance_km' => round($distance, 2), 'total' => $this->fare($pricing, $distance)];
     }
 }
