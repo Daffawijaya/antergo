@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\UserRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -20,20 +22,24 @@ class AuthController extends Controller
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        $user = User::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'],
-            'phone' => $validated['phone'],
-            'password' => $validated['password'],
-            'role' => 'customer',
-            'is_active' => true,
-        ]);
+        $user = DB::transaction(function () use ($validated) {
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'phone' => $validated['phone'],
+                'password' => $validated['password'],
+                'is_active' => true,
+            ]);
+            $user->roles()->create(['role' => UserRole::CUSTOMER]);
+
+            return $user;
+        });
 
         $token = $user->createToken('antergo')->plainTextToken;
 
         return response()->json([
             'message' => 'Registration successful',
-            'user' => $user,
+            'user' => $this->userPayload($user),
             'token' => $token,
         ], 201);
     }
@@ -65,7 +71,7 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Login successful',
-            'user' => $user,
+            'user' => $this->userPayload($user),
             'token' => $token,
         ]);
     }
@@ -73,8 +79,23 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return response()->json([
-            'user' => $request->user(),
+            'user' => $this->userPayload($request->user()),
         ]);
+    }
+
+    private function userPayload(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'roles' => $user->roleNames(),
+            'avatar' => $user->avatar,
+            'is_active' => $user->is_active,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at,
+        ];
     }
 
     public function logout(Request $request): JsonResponse

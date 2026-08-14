@@ -11,6 +11,70 @@ use Illuminate\Support\Facades\DB;
 
 class DriverOrderController extends Controller
 {
+    public function active(Request $request): JsonResponse
+    {
+        $driver = Driver::where('user_id', $request->user()->id)->first();
+
+        if (! $driver) {
+            return response()->json([
+                'message' => 'Driver profile not found.',
+            ], 404);
+        }
+
+        $order = Order::with([
+            'user',
+            'driver.user',
+            'driver.vehicle',
+            'merchant',
+            'items',
+            'statusHistories',
+        ])
+            ->where('driver_id', $driver->id)
+            ->where(function ($query) {
+                $query->where(function ($query) {
+                    $query->where('type', Order::TYPE_RIDE)
+                        ->whereIn('status', [
+                            Order::STATUS_DRIVER_ASSIGNED,
+                            Order::STATUS_DRIVER_ARRIVED,
+                            Order::STATUS_IN_PROGRESS,
+                        ]);
+                })->orWhere(function ($query) {
+                    $query->where('type', Order::TYPE_FOOD)
+                        ->whereIn('status', [
+                            Order::STATUS_DRIVER_ASSIGNED,
+                            Order::STATUS_PICKED_UP,
+                            Order::STATUS_DELIVERING,
+                        ]);
+                });
+            })
+            ->latest()
+            ->first();
+
+        return response()->json([
+            'order' => $order,
+        ]);
+    }
+
+    public function history(Request $request): JsonResponse
+    {
+        $driver = Driver::where('user_id', $request->user()->id)->first();
+
+        if (! $driver) {
+            return response()->json([
+                'message' => 'Driver profile not found.',
+            ], 404);
+        }
+
+        return response()->json(
+            Order::with(['user', 'merchant', 'items', 'statusHistories'])
+                ->where('driver_id', $driver->id)
+                ->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_FOOD])
+                ->whereIn('status', [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED])
+                ->latest()
+                ->paginate(10)
+        );
+    }
+
     public function available(Request $request): JsonResponse
     {
         $driver = Driver::where('user_id', $request->user()->id)
@@ -34,7 +98,7 @@ class DriverOrderController extends Controller
         $driverLatitude = (float) $driver->location->latitude;
         $driverLongitude = (float) $driver->location->longitude;
 
-        $orders = Order::query()
+        $orders = Order::with(['merchant', 'items'])
             ->where(function ($query) {
                 $query->where(function ($query) {
                     $query->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND])
@@ -133,6 +197,8 @@ class DriverOrderController extends Controller
                     'driver.user',
                     'driver.vehicle',
                     'driver.location',
+                    'merchant',
+                    'items',
                     'statusHistories',
                 ]),
                 'status' => 200,

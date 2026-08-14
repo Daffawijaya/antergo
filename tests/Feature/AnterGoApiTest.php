@@ -8,6 +8,8 @@ use App\Models\MerchantCategory;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\UserRole;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\WithFaker;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
@@ -36,7 +38,7 @@ class AnterGoApiTest extends TestCase
         ]);
 
         $register->assertCreated()
-            ->assertJsonPath('user.role', 'customer')
+            ->assertJsonPath('user.roles.0', 'customer')
             ->assertJsonStructure(['token']);
 
         $login = $this->postJson('/api/auth/login', [
@@ -132,6 +134,35 @@ class AnterGoApiTest extends TestCase
             ->assertJsonPath('order.status', Order::STATUS_DRIVER_ASSIGNED);
     }
 
+    public function test_driver_can_restore_active_ride_and_view_ride_history(): void
+    {
+        $order = $this->createRide();
+        [$driverUser] = $this->driver(isOnline: true);
+        Sanctum::actingAs($driverUser);
+
+        $this->postJson("/api/driver/orders/{$order->id}/accept")->assertOk();
+
+        $this->getJson('/api/driver/orders/active')
+            ->assertOk()
+            ->assertJsonPath('order.id', $order->id)
+            ->assertJsonPath('order.status', Order::STATUS_DRIVER_ASSIGNED);
+
+        $this->getJson('/api/driver/orders/history')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        foreach ([Order::STATUS_DRIVER_ARRIVED, Order::STATUS_IN_PROGRESS, Order::STATUS_COMPLETED] as $status) {
+            $this->postJson("/api/driver/orders/{$order->id}/status", ['status' => $status])->assertOk();
+        }
+
+        $this->getJson('/api/driver/orders/active')
+            ->assertOk()
+            ->assertJsonPath('order', null);
+
+        $this->getJson('/api/driver/orders/history')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', Order::STATUS_COMPLETED);
+    }
     public function test_ride_lifecycle_reaches_completed(): void
     {
         $order = $this->createRide();
@@ -298,6 +329,127 @@ class AnterGoApiTest extends TestCase
         }
     }
 
+    public function test_driver_food_delivery_is_available_active_and_historic(): void
+    {
+        [$merchantUser, $merchant] = $this->merchant();
+        $product = $this->product($merchant);
+        $order = $this->readyFoodOrder($merchantUser, $merchant, $product);
+        [$driverUser, $driver] = $this->driver(isOnline: true, withLocation: true);
+
+        Sanctum::actingAs($driverUser);
+        $this->getJson('/api/driver/orders/available')
+            ->assertOk()
+            ->assertJsonPath('orders.0.id', $order->id)
+            ->assertJsonPath('orders.0.type', Order::TYPE_FOOD)
+            ->assertJsonPath('orders.0.merchant.id', $merchant->id)
+            ->assertJsonPath('orders.0.items.0.product_id', $product->id);
+
+        $this->postJson("/api/driver/orders/{$order->id}/accept")
+            ->assertOk()
+            ->assertJsonPath('order.status', Order::STATUS_DRIVER_ASSIGNED);
+
+        $this->getJson('/api/driver/orders/active')
+            ->assertOk()
+            ->assertJsonPath('order.id', $order->id)
+            ->assertJsonPath('order.type', Order::TYPE_FOOD);
+
+        $this->postJson("/api/driver/orders/{$order->id}/status", [
+            'status' => Order::STATUS_DRIVER_ARRIVED,
+        ])->assertUnprocessable();
+
+        [$otherDriverUser] = $this->driver(isOnline: true);
+        Sanctum::actingAs($otherDriverUser);
+        $this->postJson("/api/driver/orders/{$order->id}/status", [
+            'status' => Order::STATUS_PICKED_UP,
+        ])->assertForbidden();
+
+        Sanctum::actingAs($driverUser);
+        foreach ([Order::STATUS_PICKED_UP, Order::STATUS_DELIVERING, Order::STATUS_COMPLETED] as $status) {
+            $this->postJson("/api/driver/orders/{$order->id}/status", ['status' => $status])
+                ->assertOk()
+                ->assertJsonPath('order.status', $status);
+        }
+
+        $this->getJson('/api/driver/orders/active')->assertOk()->assertJsonPath('order', null);
+        $this->getJson('/api/driver/orders/history')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $order->id)
+            ->assertJsonPath('data.0.type', Order::TYPE_FOOD);
+        $this->assertSame(1, $driver->fresh()->total_completed_orders);
+    }
+
+    public function test_second_driver_cannot_take_an_already_assigned_food_order(): void
+    {
+        [$merchantUser, $merchant] = $this->merchant();
+        $order = $this->readyFoodOrder($merchantUser, $merchant, $this->product($merchant));
+        [$firstUser, $firstDriver] = $this->driver(isOnline: true);
+        [$secondUser] = $this->driver(isOnline: true);
+
+        Sanctum::actingAs($firstUser);
+        $this->postJson("/api/driver/orders/{$order->id}/accept")->assertOk();
+
+        Sanctum::actingAs($secondUser);
+        $this->postJson("/api/driver/orders/{$order->id}/accept")->assertUnprocessable();
+        $this->assertSame($firstDriver->id, $order->fresh()->driver_id);
+    }
+    public function test_phone_remains_unique(): void
+    {
+        $this->user('customer', '12345678');
+
+        $this->postJson('/api/auth/register', [
+            'name' => 'Duplicate Phone',
+            'email' => 'different@example.com',
+            'phone' => '0812345678',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertUnprocessable()->assertJsonValidationErrors('phone');
+    }
+
+    public function test_user_can_have_customer_and_driver_roles_without_duplicates(): void
+    {
+        $user = $this->user('customer');
+        $user->roles()->create(['role' => UserRole::DRIVER]);
+
+        $this->assertTrue($user->hasAnyRole(['customer', 'driver']));
+        $this->assertSame(['customer', 'driver'], $user->roleNames());
+        $this->expectException(QueryException::class);
+        $user->roles()->create(['role' => UserRole::DRIVER]);
+    }
+
+    public function test_customer_with_approved_driver_profile_can_use_driver_endpoint(): void
+    {
+        $user = $this->user('customer');
+        $user->roles()->create(['role' => UserRole::DRIVER]);
+        Driver::create([
+            'user_id' => $user->id,
+            'nik' => 'NIK-MULTI',
+            'license_number' => 'SIM-MULTI',
+            'status' => 'approved',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/driver/online')->assertOk();
+    }
+
+    public function test_customer_can_create_merchant_profile_and_gain_merchant_role(): void
+    {
+        $user = $this->user('customer');
+        $category = MerchantCategory::create(['name' => 'Multi', 'slug' => 'multi']);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/merchant', [
+            'category_id' => $category->id,
+            'name' => 'Multi Merchant',
+            'phone' => '021000000',
+            'address' => 'Jl. Multi',
+            'latitude' => -6.2,
+            'longitude' => 106.8,
+        ])->assertCreated();
+
+        $this->assertTrue($user->hasRole(UserRole::MERCHANT));
+        $this->getJson('/api/merchant/me')->assertOk();
+    }
+
     public function test_unauthenticated_and_wrong_role_access_is_rejected(): void
     {
         $this->postJson('/api/orders', $this->ridePayload())->assertUnauthorized();
@@ -323,14 +475,17 @@ class AnterGoApiTest extends TestCase
     {
         $suffix ??= $this->faker->unique()->numerify('########');
 
-        return User::create([
+        $user = User::create([
             'name' => ucfirst($role).' '.$suffix,
             'email' => "{$role}-{$suffix}@example.com",
             'phone' => '08'.$suffix,
             'password' => Hash::make('password123'),
-            'role' => $role,
             'is_active' => true,
         ]);
+
+        $user->roles()->create(['role' => $role]);
+
+        return $user;
     }
 
     private function driver(bool $isOnline = false, bool $withLocation = false): array
@@ -407,6 +562,20 @@ class AnterGoApiTest extends TestCase
         return Order::findOrFail($id);
     }
 
+    private function readyFoodOrder(User $merchantUser, Merchant $merchant, Product $product): Order
+    {
+        $order = $this->createFoodOrder($merchant, $product);
+        Sanctum::actingAs($merchantUser);
+        $this->postJson("/api/merchant/orders/{$order->id}/confirm")->assertOk();
+        $this->postJson("/api/merchant/orders/{$order->id}/status", [
+            'status' => Order::STATUS_PREPARING,
+        ])->assertOk();
+        $this->postJson("/api/merchant/orders/{$order->id}/status", [
+            'status' => Order::STATUS_READY_FOR_PICKUP,
+        ])->assertOk();
+
+        return $order->fresh();
+    }
     private function foodPayload(Merchant $merchant, Product $product, int $quantity = 1): array
     {
         return [

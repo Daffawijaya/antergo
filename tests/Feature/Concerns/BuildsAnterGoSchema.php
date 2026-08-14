@@ -21,6 +21,13 @@ trait BuildsAnterGoSchema
             $table->timestamps();
         });
 
+        Schema::create('user_roles', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->enum('role', ['customer', 'driver', 'merchant', 'admin']);
+            $table->timestamps();
+            $table->unique(['user_id', 'role']);
+        });
         Schema::create('drivers', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();

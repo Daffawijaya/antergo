@@ -113,7 +113,7 @@ class OrderController extends Controller
         $canView = $order->user_id === $user->id
             || $order->driver?->user_id === $user->id
             || $order->merchant?->user_id === $user->id
-            || $user->role === 'admin';
+            || $user->hasRole('admin');
 
         if (! $canView) {
             return response()->json([
@@ -283,6 +283,8 @@ class OrderController extends Controller
                 'driver.user',
                 'driver.vehicle',
                 'driver.location',
+                'merchant',
+                'items',
                 'statusHistories',
             ]),
         ]);

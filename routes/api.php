@@ -27,6 +27,8 @@ Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver')->group(func
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver/orders')->group(function () {
+    Route::get('/active', [DriverOrderController::class, 'active']);
+    Route::get('/history', [DriverOrderController::class, 'history']);
     Route::get('/available', [DriverOrderController::class, 'available']);
     Route::post('/{order}/accept', [DriverOrderController::class, 'accept']);
     Route::post('/{order}/status', [OrderController::class, 'status']);
@@ -48,9 +50,10 @@ Route::middleware(['auth:sanctum', 'role:customer'])->prefix('food/orders')->gro
 Route::get('/merchants', [MerchantController::class, 'index']);
 Route::get('/merchants/{merchant}', [MerchantController::class, 'show']);
 
+Route::middleware('auth:sanctum')->post('/merchant', [MerchantController::class, 'store']);
+
 Route::middleware(['auth:sanctum', 'role:merchant'])->prefix('merchant')->group(function () {
     Route::get('/me', [MerchantController::class, 'myMerchant']);
-    Route::post('/', [MerchantController::class, 'store']);
     Route::post('/open', [MerchantController::class, 'open']);
     Route::post('/close', [MerchantController::class, 'close']);
 

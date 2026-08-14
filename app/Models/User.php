@@ -18,7 +18,6 @@ class User extends Authenticatable
         'email',
         'phone',
         'password',
-        'role',
         'avatar',
         'is_active',
     ];
@@ -38,6 +37,43 @@ class User extends Authenticatable
     public function addresses()
     {
         return $this->hasMany(Address::class);
+    }
+
+    public function roles()
+    {
+        return $this->hasMany(UserRole::class);
+    }
+
+    public function hasRole(string $role): bool
+    {
+        return $this->relationLoaded('roles')
+            ? $this->roles->contains('role', $role)
+            : $this->roles()->where('role', $role)->exists();
+    }
+
+    public function hasAnyRole(array $roles): bool
+    {
+        if ($roles === []) {
+            return false;
+        }
+
+        return $this->relationLoaded('roles')
+            ? $this->roles->contains(fn (UserRole $userRole) => in_array($userRole->role, $roles, true))
+            : $this->roles()->whereIn('role', $roles)->exists();
+    }
+
+    public function roleNames(): array
+    {
+        return $this->roles()->orderBy('id')->pluck('role')->all();
+    }
+
+    public function addRole(string $role): UserRole
+    {
+        if (! in_array($role, UserRole::ALLOWED, true)) {
+            throw new \InvalidArgumentException("Unsupported role [{$role}].");
+        }
+
+        return $this->roles()->firstOrCreate(['role' => $role]);
     }
 
     public function driver()

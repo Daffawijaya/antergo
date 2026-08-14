@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Merchant;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MerchantController extends Controller
 {
@@ -60,18 +61,23 @@ class MerchantController extends Controller
             ], 422);
         }
 
-        $merchant = Merchant::create([
-            'user_id' => $request->user()->id,
-            'category_id' => $validated['category_id'],
-            'name' => $validated['name'],
-            'description' => $validated['description'] ?? null,
-            'phone' => $validated['phone'],
-            'address' => $validated['address'],
-            'latitude' => $validated['latitude'],
-            'longitude' => $validated['longitude'],
-            'is_open' => false,
-            'is_active' => true,
-        ]);
+        $merchant = DB::transaction(function () use ($request, $validated) {
+            $merchant = Merchant::create([
+                'user_id' => $request->user()->id,
+                'category_id' => $validated['category_id'],
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'phone' => $validated['phone'],
+                'address' => $validated['address'],
+                'latitude' => $validated['latitude'],
+                'longitude' => $validated['longitude'],
+                'is_open' => false,
+                'is_active' => true,
+            ]);
+            $request->user()->addRole('merchant');
+
+            return $merchant;
+        });
 
         return response()->json([
             'message' => 'Merchant created successfully.',
