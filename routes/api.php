@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
@@ -78,3 +79,17 @@ Route::middleware(['auth:sanctum', 'role:merchant'])->prefix('merchant')->group(
 
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('/dashboard', [AdminController::class, 'dashboard']);
+    Route::get('/users', [AdminController::class, 'users']);
+    Route::get('/users/{user}', [AdminController::class, 'user']);
+    Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
+    Route::get('/drivers', [AdminController::class, 'drivers']);
+    Route::get('/drivers/{driver}', [AdminController::class, 'driver']);
+    Route::patch('/drivers/{driver}/status', [AdminController::class, 'updateDriverStatus']);
+    Route::get('/merchants', [AdminController::class, 'merchants']);
+    Route::get('/merchants/{merchant}', [AdminController::class, 'merchant']);
+    Route::patch('/merchants/{merchant}/status', [AdminController::class, 'updateMerchantStatus']);
+    Route::get('/orders', [AdminController::class, 'orders']);
+    Route::get('/orders/{order}', [AdminController::class, 'order']);
+});
