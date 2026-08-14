@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\Order;
+use App\Services\OrderPushNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -210,6 +211,8 @@ class DriverOrderController extends Controller
                 'message' => $result['error'],
             ], $result['status']);
         }
+
+        app(OrderPushNotificationService::class)->driverAssigned($result['order']);
 
         return response()->json([
             'message' => 'Order accepted successfully.',

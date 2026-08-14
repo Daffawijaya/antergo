@@ -7,11 +7,13 @@ use App\Models\Merchant;
 use App\Models\MerchantCategory;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\PushDeviceToken;
 use App\Models\User;
 use App\Models\UserRole;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\WithFaker;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
 use Tests\Feature\Concerns\BuildsAnterGoSchema;
 use Tests\TestCase;
@@ -391,6 +393,113 @@ class AnterGoApiTest extends TestCase
         Sanctum::actingAs($secondUser);
         $this->postJson("/api/driver/orders/{$order->id}/accept")->assertUnprocessable();
         $this->assertSame($firstDriver->id, $order->fresh()->driver_id);
+    }
+    public function test_user_can_manage_multiple_push_tokens_and_only_own_notification_history(): void
+    {
+        $user = $this->user('customer');
+        $other = $this->user('customer');
+        Sanctum::actingAs($user);
+
+        foreach (['ExpoPushToken[device_one]', 'ExpoPushToken[device_two]'] as $token) {
+            $this->postJson('/api/push-tokens', ['token' => $token, 'platform' => 'android'])
+                ->assertOk();
+        }
+        $this->assertDatabaseCount('push_device_tokens', 2);
+
+        Sanctum::actingAs($other);
+        $this->postJson('/api/push-tokens', [
+            'token' => 'ExpoPushToken[device_one]',
+            'platform' => 'ios',
+        ])->assertOk();
+        $this->assertDatabaseHas('push_device_tokens', [
+            'user_id' => $other->id,
+            'token' => 'ExpoPushToken[device_one]',
+            'platform' => 'ios',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->deleteJson('/api/push-tokens', ['token' => 'ExpoPushToken[device_one]'])->assertOk();
+        $this->assertDatabaseHas('push_device_tokens', ['user_id' => $other->id, 'token' => 'ExpoPushToken[device_one]']);
+
+        $user->notifications()->create([
+            'type' => 'private_test',
+            'title' => 'Private',
+            'message' => 'Only owner',
+            'data' => ['route' => 'customer_ride_detail'],
+        ]);
+        $this->getJson('/api/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.0.type', 'private_test');
+
+        Sanctum::actingAs($other);
+        $this->getJson('/api/notifications')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_food_events_create_history_and_send_minimal_expo_payload(): void
+    {
+        Http::fake(['https://exp.host/*' => Http::response(['data' => [['status' => 'ok']]], 200)]);
+        [$merchantUser, $merchant] = $this->merchant();
+        $product = $this->product($merchant);
+        PushDeviceToken::create([
+            'user_id' => $merchantUser->id,
+            'token' => 'ExpoPushToken[merchant_device]',
+            'platform' => 'android',
+        ]);
+        $customer = $this->user('customer');
+        PushDeviceToken::create([
+            'user_id' => $customer->id,
+            'token' => 'ExpoPushToken[customer_device]',
+            'platform' => 'ios',
+        ]);
+
+        Sanctum::actingAs($customer);
+        $orderId = $this->postJson('/api/food/orders', $this->foodPayload($merchant, $product))
+            ->assertCreated()
+            ->json('order.id');
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $merchantUser->id,
+            'type' => 'food_order_created',
+        ]);
+
+        Sanctum::actingAs($merchantUser);
+        $this->postJson("/api/merchant/orders/{$orderId}/confirm")->assertOk();
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $customer->id,
+            'type' => 'food_merchant_confirmed',
+        ]);
+
+        Http::assertSent(function ($request) use ($orderId) {
+            $message = $request->data()[0] ?? [];
+
+            return $message['data']['order_id'] === $orderId
+                && $message['data']['order_type'] === 'food'
+                && in_array($message['data']['route'], ['merchant_food_detail', 'customer_food_detail'], true)
+                && ! isset($message['data']['notes']);
+        });
+    }
+
+    public function test_invalid_expo_device_token_is_cleaned_without_failing_order_flow(): void
+    {
+        Http::fake(['https://exp.host/*' => Http::response([
+            'data' => [[
+                'status' => 'error',
+                'details' => ['error' => 'DeviceNotRegistered'],
+            ]],
+        ], 200)]);
+        $order = $this->createRide();
+        $customer = $order->user;
+        PushDeviceToken::create([
+            'user_id' => $customer->id,
+            'token' => 'ExpoPushToken[invalid_device]',
+            'platform' => 'android',
+        ]);
+        [$driverUser] = $this->driver(isOnline: true);
+        Sanctum::actingAs($driverUser);
+
+        $this->postJson("/api/driver/orders/{$order->id}/accept")
+            ->assertOk()
+            ->assertJsonPath('order.status', Order::STATUS_DRIVER_ASSIGNED);
+        $this->assertDatabaseMissing('push_device_tokens', ['token' => 'ExpoPushToken[invalid_device]']);
     }
     public function test_phone_remains_unique(): void
     {

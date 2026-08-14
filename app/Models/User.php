@@ -96,6 +96,10 @@ class User extends Authenticatable
         return $this->hasMany(Rating::class);
     }
 
+    public function pushDeviceTokens()
+    {
+        return $this->hasMany(PushDeviceToken::class);
+    }
     public function notifications()
     {
         return $this->hasMany(Notification::class);

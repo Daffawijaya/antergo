@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\OrderPushNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -77,12 +78,18 @@ class OrderController extends Controller
                 'created_at' => now(),
             ]);
 
+            $order->payment()->create([
+                'method' => 'cash',
+                'status' => 'pending',
+                'amount' => $totalPrice,
+            ]);
+
             return $order;
         });
 
         return response()->json([
             'message' => 'Ride request created successfully.',
-            'order' => $order->load('statusHistories'),
+            'order' => $order->load(['payment', 'statusHistories']),
             'fare' => [
                 'base_fare' => self::BASE_FARE,
                 'price_per_km' => self::PRICE_PER_KM,
@@ -188,9 +195,12 @@ class OrderController extends Controller
             ]);
         });
 
+        $cancelledOrder = $order->fresh(['driver.user', 'merchant.user', 'statusHistories']);
+        app(OrderPushNotificationService::class)->customerCancelled($cancelledOrder);
+
         return response()->json([
             'message' => 'Order cancelled successfully.',
-            'order' => $order->fresh('statusHistories'),
+            'order' => $cancelledOrder,
         ]);
     }
 
@@ -276,20 +286,22 @@ class OrderController extends Controller
             }
         });
 
+        $updatedOrder = $order->fresh([
+            'user',
+            'driver.user',
+            'driver.vehicle',
+            'driver.location',
+            'merchant.user',
+            'items',
+            'statusHistories',
+        ]);
+        app(OrderPushNotificationService::class)->driverStatusChanged($updatedOrder);
+
         return response()->json([
             'message' => 'Order status updated successfully.',
-            'order' => $order->fresh([
-                'user',
-                'driver.user',
-                'driver.vehicle',
-                'driver.location',
-                'merchant',
-                'items',
-                'statusHistories',
-            ]),
+            'order' => $updatedOrder,
         ]);
     }
-
     private function calculateFare(float $distance): int
     {
         $fare = self::BASE_FARE + ($distance * self::PRICE_PER_KM);

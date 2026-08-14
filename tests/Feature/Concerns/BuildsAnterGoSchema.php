@@ -169,6 +169,25 @@ trait BuildsAnterGoSchema
             $table->timestamps();
         });
 
+        Schema::create('notifications', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('type');
+            $table->string('title');
+            $table->text('message');
+            $table->json('data')->nullable();
+            $table->timestamp('read_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('push_device_tokens', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->text('token')->unique();
+            $table->string('platform', 20);
+            $table->timestamp('last_seen_at')->nullable();
+            $table->timestamps();
+        });
         Schema::create('personal_access_tokens', function (Blueprint $table) {
             $table->id();
             $table->morphs('tokenable');

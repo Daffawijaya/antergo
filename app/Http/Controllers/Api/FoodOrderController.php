@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\OrderPushNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +33,7 @@ class FoodOrderController extends Controller
             'destination_address' => ['required', 'string', 'max:500'],
             'destination_latitude' => ['required', 'numeric', 'between:-90,90'],
             'destination_longitude' => ['required', 'numeric', 'between:-180,180'],
-            'payment_method' => ['sometimes', 'in:cash,qris,ewallet,gateway'],
+            'payment_method' => ['sometimes', 'in:cash'],
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -137,12 +138,20 @@ class FoodOrderController extends Controller
                 'created_at' => now(),
             ]);
 
+            $order->payment()->create([
+                'method' => 'cash',
+                'status' => 'pending',
+                'amount' => $total,
+            ]);
+
             return $order;
         }, 3);
 
+        app(OrderPushNotificationService::class)->foodCreated($order);
+
         return response()->json([
             'message' => 'Food order created successfully.',
-            'order' => $order->load(['merchant', 'items', 'statusHistories']),
+            'order' => $order->load(['merchant', 'items', 'payment', 'statusHistories']),
         ], 201);
     }
 
@@ -227,6 +236,8 @@ class FoodOrderController extends Controller
 
             return $lockedOrder;
         }, 3);
+
+        app(OrderPushNotificationService::class)->merchantStatusChanged($updatedOrder);
 
         return response()->json([
             'message' => 'Order status updated successfully.',

@@ -6,7 +6,10 @@ use App\Http\Controllers\Api\DriverOrderController;
 use App\Http\Controllers\Api\FoodOrderController;
 use App\Http\Controllers\Api\MerchantController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\PushNotificationController;
+use App\Http\Controllers\Api\RatingController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -19,6 +22,11 @@ Route::prefix('auth')->group(function () {
     });
 });
 
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/push-tokens', [PushNotificationController::class, 'registerToken']);
+    Route::delete('/push-tokens', [PushNotificationController::class, 'unregisterToken']);
+    Route::get('/notifications', [PushNotificationController::class, 'index']);
+});
 Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver')->group(function () {
     Route::get('/profile', [DriverController::class, 'profile']);
     Route::post('/online', [DriverController::class, 'online']);
@@ -32,12 +40,14 @@ Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver/orders')->gro
     Route::get('/available', [DriverOrderController::class, 'available']);
     Route::post('/{order}/accept', [DriverOrderController::class, 'accept']);
     Route::post('/{order}/status', [OrderController::class, 'status']);
+    Route::post('/{order}/payments/cash/settle', [PaymentController::class, 'settleCash']);
 });
 
 Route::middleware(['auth:sanctum', 'role:customer'])->prefix('orders')->group(function () {
     Route::post('/', [OrderController::class, 'store']);
     Route::get('/', [OrderController::class, 'index']);
     Route::post('/{order}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/{order}/rating', [RatingController::class, 'store']);
 });
 
 Route::middleware(['auth:sanctum', 'role:customer,driver,merchant,admin'])
