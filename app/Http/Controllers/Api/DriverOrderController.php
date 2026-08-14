@@ -40,6 +40,14 @@ class DriverOrderController extends Controller
                             Order::STATUS_IN_PROGRESS,
                         ]);
                 })->orWhere(function ($query) {
+                    $query->where('type', Order::TYPE_SEND)
+                        ->whereIn('status', [
+                            Order::STATUS_DRIVER_ASSIGNED,
+                            Order::STATUS_DRIVER_ARRIVED,
+                            Order::STATUS_PICKED_UP,
+                            Order::STATUS_DELIVERING,
+                        ]);
+                })->orWhere(function ($query) {
                     $query->where('type', Order::TYPE_FOOD)
                         ->whereIn('status', [
                             Order::STATUS_DRIVER_ASSIGNED,
@@ -69,7 +77,7 @@ class DriverOrderController extends Controller
         return response()->json(
             Order::with(['user', 'merchant', 'items', 'statusHistories'])
                 ->where('driver_id', $driver->id)
-                ->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_FOOD])
+                ->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND, Order::TYPE_FOOD])
                 ->whereIn('status', [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED])
                 ->latest()
                 ->paginate(10)
@@ -104,6 +112,14 @@ class DriverOrderController extends Controller
                 $query->where(function ($query) {
                     $query->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND])
                         ->where('status', Order::STATUS_SEARCHING_DRIVER);
+                })->orWhere(function ($query) {
+                    $query->where('type', Order::TYPE_SEND)
+                        ->whereIn('status', [
+                            Order::STATUS_DRIVER_ASSIGNED,
+                            Order::STATUS_DRIVER_ARRIVED,
+                            Order::STATUS_PICKED_UP,
+                            Order::STATUS_DELIVERING,
+                        ]);
                 })->orWhere(function ($query) {
                     $query->where('type', Order::TYPE_FOOD)
                         ->where('status', Order::STATUS_READY_FOR_PICKUP);

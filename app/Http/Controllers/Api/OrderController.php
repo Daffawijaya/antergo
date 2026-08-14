@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Driver;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\OrderPricingService;
 use App\Services\OrderPushNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,11 +15,9 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
-    private const BASE_FARE = 5000;
-
-    private const PRICE_PER_KM = 2500;
-
-    private const MINIMUM_FARE = 10000;
+    public function __construct(private readonly OrderPricingService $pricing)
+    {
+    }
 
     public function store(Request $request): JsonResponse
     {
@@ -33,14 +32,14 @@ class OrderController extends Controller
             'notes' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $distance = $this->calculateDistance(
+        $distance = $this->pricing->distance(
             (float) $validated['pickup_latitude'],
             (float) $validated['pickup_longitude'],
             (float) $validated['destination_latitude'],
             (float) $validated['destination_longitude']
         );
 
-        $totalPrice = $this->calculateFare($distance);
+        $totalPrice = $this->pricing->rideFare($distance);
 
         $order = DB::transaction(function () use (
             $request,
@@ -90,12 +89,8 @@ class OrderController extends Controller
         return response()->json([
             'message' => 'Ride request created successfully.',
             'order' => $order->load(['payment', 'statusHistories']),
-            'fare' => [
-                'base_fare' => self::BASE_FARE,
-                'price_per_km' => self::PRICE_PER_KM,
-                'distance_km' => round($distance, 2),
-                'total' => $totalPrice,
-            ],
+            'fare' => $this->pricing->rideBreakdown($distance),
+
         ], 201);
     }
 
@@ -231,17 +226,24 @@ class OrderController extends Controller
         $currentStatus = $order->status;
         $newStatus = $validated['status'];
 
-        $allowedTransitions = $order->type === Order::TYPE_FOOD
-            ? [
+        $allowedTransitions = match ($order->type) {
+            Order::TYPE_FOOD => [
                 Order::STATUS_DRIVER_ASSIGNED => [Order::STATUS_PICKED_UP],
                 Order::STATUS_PICKED_UP => [Order::STATUS_DELIVERING],
                 Order::STATUS_DELIVERING => [Order::STATUS_COMPLETED],
-            ]
-            : [
+            ],
+            Order::TYPE_SEND => [
+                Order::STATUS_DRIVER_ASSIGNED => [Order::STATUS_DRIVER_ARRIVED],
+                Order::STATUS_DRIVER_ARRIVED => [Order::STATUS_PICKED_UP],
+                Order::STATUS_PICKED_UP => [Order::STATUS_DELIVERING],
+                Order::STATUS_DELIVERING => [Order::STATUS_COMPLETED],
+            ],
+            default => [
                 Order::STATUS_DRIVER_ASSIGNED => [Order::STATUS_DRIVER_ARRIVED],
                 Order::STATUS_DRIVER_ARRIVED => [Order::STATUS_IN_PROGRESS],
                 Order::STATUS_IN_PROGRESS => [Order::STATUS_COMPLETED],
-            ];
+            ],
+        };
 
         if (
             ! isset($allowedTransitions[$currentStatus]) ||
@@ -255,11 +257,17 @@ class OrderController extends Controller
         $notes = [
             'driver_arrived' => 'Driver has arrived at pickup location.',
             'in_progress' => 'Trip has started.',
-            'picked_up' => 'Order has been picked up from the merchant.',
-            'delivering' => 'Order is being delivered.',
-            'completed' => $order->type === Order::TYPE_FOOD
-                ? 'Food order delivered successfully.'
-                : 'Trip completed successfully.',
+            'picked_up' => $order->type === Order::TYPE_SEND
+                ? 'Package has been picked up from the customer.'
+                : 'Order has been picked up from the merchant.',
+            'delivering' => $order->type === Order::TYPE_SEND
+                ? 'Package is being delivered to the recipient.'
+                : 'Order is being delivered.',
+            'completed' => match ($order->type) {
+                Order::TYPE_FOOD => 'Food order delivered successfully.',
+                Order::TYPE_SEND => 'Package delivered successfully.',
+                default => 'Trip completed successfully.',
+            },
         ];
 
         DB::transaction(function () use ($order, $currentStatus, $newStatus, $allowedTransitions, $notes, $driver) {
@@ -301,35 +309,5 @@ class OrderController extends Controller
             'message' => 'Order status updated successfully.',
             'order' => $updatedOrder,
         ]);
-    }
-    private function calculateFare(float $distance): int
-    {
-        $fare = self::BASE_FARE + ($distance * self::PRICE_PER_KM);
-
-        return (int) max(
-            self::MINIMUM_FARE,
-            round($fare / 500) * 500
-        );
-    }
-
-    private function calculateDistance(
-        float $latitude1,
-        float $longitude1,
-        float $latitude2,
-        float $longitude2
-    ): float {
-        $earthRadius = 6371;
-
-        $latitudeDifference = deg2rad($latitude2 - $latitude1);
-        $longitudeDifference = deg2rad($longitude2 - $longitude1);
-
-        $a = sin($latitudeDifference / 2) ** 2
-            + cos(deg2rad($latitude1))
-            * cos(deg2rad($latitude2))
-            * sin($longitudeDifference / 2) ** 2;
-
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-
-        return $earthRadius * $c;
     }
 }

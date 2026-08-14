@@ -35,8 +35,7 @@ class OrderPushNotificationService
     public function driverAssigned(Order $order): void
     {
         $order->loadMissing(['user', 'merchant.user']);
-        $route = $order->type === Order::TYPE_FOOD ? 'customer_food_detail' : 'customer_ride_detail';
-        $this->send($order->user, "{$order->type}_driver_assigned", 'Driver ditemukan', "Driver telah menerima order {$order->order_number}.", $route, $order);
+        $this->send($order->user, "{$order->type}_driver_assigned", 'Driver ditemukan', "Driver telah menerima order {$order->order_number}.", $this->customerRoute($order), $order);
 
         if ($order->type === Order::TYPE_FOOD && $order->merchant?->user) {
             $this->send($order->merchant->user, 'food_driver_assigned', 'Driver menuju merchant', "Driver telah ditugaskan untuk {$order->order_number}.", 'merchant_food_detail', $order);
@@ -46,22 +45,29 @@ class OrderPushNotificationService
     public function driverStatusChanged(Order $order): void
     {
         $order->loadMissing(['user', 'merchant.user']);
-        $copy = $order->type === Order::TYPE_FOOD
-            ? match ($order->status) {
+        $copy = match ($order->type) {
+            Order::TYPE_FOOD => match ($order->status) {
                 Order::STATUS_PICKED_UP => ['Pesanan sudah diambil', 'Driver telah mengambil pesanan dari merchant.'],
                 Order::STATUS_DELIVERING => ['Pesanan sedang diantar', 'Driver sedang menuju alamat tujuan.'],
                 Order::STATUS_COMPLETED => ['Pesanan telah sampai', 'Food order Anda telah selesai.'],
                 default => null,
-            }
-            : match ($order->status) {
+            },
+            Order::TYPE_SEND => match ($order->status) {
+                Order::STATUS_DRIVER_ARRIVED => ['Driver telah tiba', 'Driver telah tiba di lokasi pickup barang.'],
+                Order::STATUS_PICKED_UP => ['Barang sudah diambil', 'Driver telah mengambil barang Anda.'],
+                Order::STATUS_DELIVERING => ['Barang sedang diantar', 'Driver sedang menuju alamat penerima.'],
+                Order::STATUS_COMPLETED => ['Barang telah sampai', 'Pengiriman barang Anda telah selesai.'],
+                default => null,
+            },
+            default => match ($order->status) {
                 Order::STATUS_DRIVER_ARRIVED => ['Driver telah tiba', 'Driver telah tiba di lokasi pickup.'],
                 Order::STATUS_COMPLETED => ['Perjalanan selesai', 'Ride Anda telah selesai.'],
                 default => null,
-            };
+            },
+        };
 
         if ($copy) {
-            $route = $order->type === Order::TYPE_FOOD ? 'customer_food_detail' : 'customer_ride_detail';
-            $this->send($order->user, "{$order->type}_{$order->status}", $copy[0], $copy[1], $route, $order);
+            $this->send($order->user, "{$order->type}_{$order->status}", $copy[0], $copy[1], $this->customerRoute($order), $order);
         }
 
         if ($order->type === Order::TYPE_FOOD && $order->status === Order::STATUS_COMPLETED && $order->merchant?->user) {
@@ -72,12 +78,10 @@ class OrderPushNotificationService
     public function customerCancelled(Order $order): void
     {
         $order->loadMissing(['user', 'driver.user', 'merchant.user']);
-        $customerRoute = $order->type === Order::TYPE_FOOD ? 'customer_food_detail' : 'customer_ride_detail';
-        $this->send($order->user, "{$order->type}_cancelled", 'Order dibatalkan', "{$order->order_number} telah dibatalkan.", $customerRoute, $order);
+        $this->send($order->user, "{$order->type}_cancelled", 'Order dibatalkan', "{$order->order_number} telah dibatalkan.", $this->customerRoute($order), $order);
 
         if ($order->driver?->user) {
-            $route = $order->type === Order::TYPE_FOOD ? 'driver_food_detail' : 'driver_ride_detail';
-            $this->send($order->driver->user, "{$order->type}_cancelled", 'Order dibatalkan', "{$order->order_number} dibatalkan oleh customer.", $route, $order);
+            $this->send($order->driver->user, "{$order->type}_cancelled", 'Order dibatalkan', "{$order->order_number} dibatalkan oleh customer.", $this->driverRoute($order), $order);
         }
         if ($order->type === Order::TYPE_FOOD && $order->merchant?->user) {
             $this->send($order->merchant->user, 'food_cancelled', 'Pesanan dibatalkan', "{$order->order_number} dibatalkan oleh customer.", 'merchant_food_detail', $order);
@@ -87,9 +91,27 @@ class OrderPushNotificationService
     public function cashPaymentSettled(Order $order): void
     {
         $order->loadMissing('user');
-        $route = $order->type === Order::TYPE_FOOD ? 'customer_food_detail' : 'customer_ride_detail';
-        $this->send($order->user, "{$order->type}_payment_paid", 'Pembayaran diterima', "Pembayaran tunai {$order->order_number} telah diterima.", $route, $order);
+        $this->send($order->user, "{$order->type}_payment_paid", 'Pembayaran diterima', "Pembayaran tunai {$order->order_number} telah diterima.", $this->customerRoute($order), $order);
     }
+
+    private function customerRoute(Order $order): string
+    {
+        return match ($order->type) {
+            Order::TYPE_FOOD => 'customer_food_detail',
+            Order::TYPE_SEND => 'customer_send_detail',
+            default => 'customer_ride_detail',
+        };
+    }
+
+    private function driverRoute(Order $order): string
+    {
+        return match ($order->type) {
+            Order::TYPE_FOOD => 'driver_food_detail',
+            Order::TYPE_SEND => 'driver_send_detail',
+            default => 'driver_ride_detail',
+        };
+    }
+
     private function send($user, string $type, string $title, string $body, string $route, Order $order): void
     {
         $this->push->notify($user, $type, $title, $body, [

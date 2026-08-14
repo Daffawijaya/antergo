@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
 use App\Http\Controllers\Api\FoodOrderController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PushNotificationController;
 use App\Http\Controllers\Api\RatingController;
+use App\Http\Controllers\Api\SendOrderController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -53,6 +55,14 @@ Route::middleware(['auth:sanctum', 'role:customer'])->prefix('orders')->group(fu
 
 Route::middleware(['auth:sanctum', 'role:customer,driver,merchant,admin'])
     ->get('/orders/{order}', [OrderController::class, 'show']);
+
+Route::middleware(['auth:sanctum', 'role:customer,driver'])->group(function () {
+    Route::get('/chats', [ChatController::class, 'conversations']);
+    Route::get('/orders/{order}/messages', [ChatController::class, 'index']);
+    Route::post('/orders/{order}/messages', [ChatController::class, 'store']);
+});
+
+Route::middleware(['auth:sanctum', 'role:customer'])->post('/send/orders', [SendOrderController::class, 'store']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->prefix('food/orders')->group(function () {
     Route::post('/', [FoodOrderController::class, 'store']);

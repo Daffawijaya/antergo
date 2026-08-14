@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -40,6 +41,8 @@ class Order extends Model
     public const STATUS_CANCELLED = 'cancelled';
 
     protected $table = 'orders';
+
+    protected $appends = ['send_details'];
 
     protected $fillable = [
         'order_number',
@@ -83,6 +86,37 @@ class Order extends Model
         ];
     }
 
+    protected function notes(): Attribute
+    {
+        return Attribute::get(function (?string $value) {
+            if ($this->type !== self::TYPE_SEND || $value === null) {
+                return $value;
+            }
+
+            $details = json_decode($value, true);
+
+            return is_array($details) ? ($details['notes'] ?? null) : $value;
+        });
+    }
+
+    protected function sendDetails(): Attribute
+    {
+        return Attribute::get(function () {
+            if ($this->type !== self::TYPE_SEND) {
+                return null;
+            }
+
+            $details = json_decode($this->attributes['notes'] ?? '', true);
+
+            return is_array($details) ? [
+                'item_name' => $details['item_name'] ?? null,
+                'item_description' => $details['item_description'] ?? null,
+                'recipient_name' => $details['recipient_name'] ?? null,
+                'recipient_phone' => $details['recipient_phone'] ?? null,
+            ] : null;
+        });
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -101,6 +135,11 @@ class Order extends Model
     public function items()
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function chatMessages()
+    {
+        return $this->hasMany(ChatMessage::class);
     }
 
     public function statusHistories()
