@@ -58,6 +58,8 @@ class Order extends Model
         'order_number',
         'user_id',
         'driver_id',
+        'vehicle_id',
+        'vehicle_snapshot',
         'merchant_id',
         'type',
         'service_variant',
@@ -95,6 +97,7 @@ class Order extends Model
             'service_fee' => 'decimal:2',
             'total_price' => 'decimal:2',
             'completed_at' => 'datetime',
+            'vehicle_snapshot' => 'array',
         ];
     }
 
@@ -137,6 +140,11 @@ class Order extends Model
     public function driver()
     {
         return $this->belongsTo(Driver::class);
+    }
+
+    public function vehicle()
+    {
+        return $this->belongsTo(Vehicle::class);
     }
 
     public function merchant()

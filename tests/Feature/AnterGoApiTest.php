@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserRole;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\WithFaker;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
@@ -27,6 +28,8 @@ class AnterGoApiTest extends TestCase
     {
         parent::setUp();
         $this->buildAnterGoSchema();
+        config(['services.supabase_storage.url' => 'https://storage.test', 'services.supabase_storage.service_key' => 'test-key']);
+        Http::fake(['https://storage.test/*' => Http::response(['Key' => 'stored'], 200)]);
     }
 
     public function test_register_login_me_and_logout_flow(): void
@@ -165,6 +168,7 @@ class AnterGoApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.status', Order::STATUS_COMPLETED);
     }
+
     public function test_ride_lifecycle_reaches_completed(): void
     {
         $order = $this->createRide();
@@ -186,14 +190,26 @@ class AnterGoApiTest extends TestCase
     {
         [$merchantUser, $merchant] = $this->merchant();
         Sanctum::actingAs($merchantUser);
-
+        config(['services.supabase_storage.url' => 'https://storage.test', 'services.supabase_storage.service_key' => 'test-key']);
+        Http::fake(['https://storage.test/*' => Http::response(['Key' => 'stored'], 200)]);
         $this->postJson('/api/merchant/products', [
+            'name' => 'Tanpa Foto',
+            'price' => 10000,
+            'stock' => 1,
+        ])->assertUnprocessable()->assertJsonValidationErrors('image');
+        $this->post('/api/merchant/products', [
+            'image' => UploadedFile::fake()->create('not-image.txt', 10, 'text/plain'),
+        ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('image');
+
+        $image = UploadedFile::fake()->createWithContent('nasi.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
+
+        $this->post('/api/merchant/products', [
             'name' => 'Nasi Goreng',
             'description' => 'Pedas',
             'price' => 25000,
             'stock' => 10,
-            'image' => 'https://example.com/nasi.jpg',
-        ])->assertCreated()
+            'image' => $image,
+        ], ['Accept' => 'application/json'])->assertCreated()
             ->assertJsonPath('product.merchant_id', $merchant->id)
             ->assertJsonPath('product.stock', 10);
     }
@@ -237,6 +253,38 @@ class AnterGoApiTest extends TestCase
         $this->assertSame('40000.00', $order->subtotal);
         $this->assertSame('49000.00', $order->total_price);
         $this->assertSame(8, $product->fresh()->stock);
+    }
+
+    public function test_order_keeps_the_vehicle_selected_when_it_was_accepted(): void
+    {
+        $order = $this->createRide();
+        [$driverUser, $driver] = $this->driver(isOnline: true);
+        $acceptedVehicle = $driver->vehicle;
+        $otherVehicle = $driver->vehicles()->create([
+            'type' => 'car',
+            'brand' => 'Toyota',
+            'model' => 'Avanza',
+            'plate_number' => 'B'.$this->faker->unique()->numerify('########'),
+            'color' => 'White',
+            'image_path' => 'other-vehicle.jpg',
+        ]);
+
+        [, $otherDriver] = $this->driver();
+
+        Sanctum::actingAs($driverUser);
+        $this->postJson("/api/driver/vehicles/{$otherDriver->vehicle->id}/active")->assertNotFound();
+
+        $this->postJson("/api/driver/orders/{$order->id}/accept")
+            ->assertOk()
+            ->assertJsonPath('order.vehicle_id', $acceptedVehicle->id)
+            ->assertJsonPath('order.vehicle_snapshot.plate_number', $acceptedVehicle->plate_number);
+
+        $this->postJson("/api/driver/vehicles/{$otherVehicle->id}/active")->assertOk();
+
+        $order->refresh();
+        $this->assertSame($acceptedVehicle->id, $order->vehicle_id);
+        $this->assertSame($acceptedVehicle->plate_number, $order->vehicle_snapshot['plate_number']);
+        $this->assertSame($otherVehicle->id, $driver->fresh()->active_vehicle_id);
     }
 
     public function test_second_driver_cannot_take_an_already_assigned_order(): void
@@ -394,6 +442,7 @@ class AnterGoApiTest extends TestCase
         $this->postJson("/api/driver/orders/{$order->id}/accept")->assertUnprocessable();
         $this->assertSame($firstDriver->id, $order->fresh()->driver_id);
     }
+
     public function test_user_can_manage_multiple_push_tokens_and_only_own_notification_history(): void
     {
         $user = $this->user('customer');
@@ -501,6 +550,7 @@ class AnterGoApiTest extends TestCase
             ->assertJsonPath('order.status', Order::STATUS_DRIVER_ASSIGNED);
         $this->assertDatabaseMissing('push_device_tokens', ['token' => 'ExpoPushToken[invalid_device]']);
     }
+
     public function test_phone_remains_unique(): void
     {
         $this->user('customer', '12345678');
@@ -529,12 +579,15 @@ class AnterGoApiTest extends TestCase
     {
         $user = $this->user('customer');
         $user->roles()->create(['role' => UserRole::DRIVER]);
-        Driver::create([
-            'user_id' => $user->id,
-            'nik' => 'NIK-MULTI',
-            'license_number' => 'SIM-MULTI',
-            'status' => 'approved',
+        $driver = Driver::create([
+            'user_id' => $user->id, 'nik' => 'NIK-MULTI',
+            'license_number' => 'SIM-MULTI', 'status' => 'approved',
         ]);
+        $vehicle = $driver->vehicles()->create([
+            'type' => 'motorcycle', 'brand' => 'Honda', 'model' => 'Beat',
+            'plate_number' => 'B-MULTI', 'color' => 'Black', 'image_path' => 'fixture.jpg',
+        ]);
+        $driver->update(['active_vehicle_id' => $vehicle->id]);
         Sanctum::actingAs($user);
 
         $this->postJson('/api/driver/online')->assertOk();
@@ -553,7 +606,20 @@ class AnterGoApiTest extends TestCase
             'address' => 'Jl. Multi',
             'latitude' => -6.2,
             'longitude' => 106.8,
-        ])->assertCreated();
+        ])->assertUnprocessable()->assertJsonValidationErrors('image');
+
+        $this->post('/api/merchant', [
+            'image' => UploadedFile::fake()->create('not-image.txt', 10, 'text/plain'),
+        ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('image');
+        $this->postJson('/api/merchant', [
+            'category_id' => $category->id,
+            'name' => 'Multi Merchant',
+            'phone' => '021000000',
+            'address' => 'Jl. Multi',
+            'latitude' => -6.2,
+            'longitude' => 106.8,
+            'image' => $this->fakeImage('merchant.png'),
+        ], ['Accept' => 'application/json'])->assertCreated();
 
         $this->assertTrue($user->hasRole(UserRole::MERCHANT));
         $this->getJson('/api/merchant/me')->assertOk();
@@ -578,6 +644,11 @@ class AnterGoApiTest extends TestCase
             'status' => Order::STATUS_COMPLETED,
         ])->assertUnprocessable();
         $this->assertSame(Order::STATUS_DRIVER_ASSIGNED, $order->fresh()->status);
+    }
+
+    private function fakeImage(string $name): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent($name, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='));
     }
 
     private function user(string $role, ?string $suffix = null): User
@@ -608,6 +679,12 @@ class AnterGoApiTest extends TestCase
             'status' => 'approved',
             'is_online' => $isOnline,
         ]);
+
+        $vehicle = $driver->vehicles()->create([
+            'type' => 'motorcycle', 'brand' => 'Honda', 'model' => 'Beat',
+            'plate_number' => 'B'.$suffix, 'color' => 'Black', 'image_path' => 'fixture.jpg',
+        ]);
+        $driver->update(['active_vehicle_id' => $vehicle->id]);
 
         if ($withLocation) {
             $driver->location()->create([
@@ -685,6 +762,7 @@ class AnterGoApiTest extends TestCase
 
         return $order->fresh();
     }
+
     private function foodPayload(Merchant $merchant, Product $product, int $quantity = 1): array
     {
         return [

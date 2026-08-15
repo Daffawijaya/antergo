@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -51,7 +53,7 @@ class ProductController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, SupabaseStorageService $storage): JsonResponse
     {
         $merchant = $request->user()
             ->merchant;
@@ -74,7 +76,7 @@ class ProductController extends Controller
             'description' => ['nullable', 'string', 'max:1000'],
             'price' => ['required', 'numeric', 'min:0'],
             'stock' => ['required', 'integer', 'min:0'],
-            'image' => ['nullable', 'string', 'max:2048'],
+            'image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'],
             'is_available' => ['nullable', 'boolean'],
         ]);
 
@@ -84,9 +86,22 @@ class ProductController extends Controller
             'description' => $validated['description'] ?? null,
             'price' => $validated['price'],
             'stock' => $validated['stock'],
-            'image' => $validated['image'] ?? null,
+            'image' => null,
             'is_available' => $validated['is_available'] ?? true,
         ]);
+
+        $path = null;
+        try {
+            $path = $storage->put('product-images', $merchant->id.'/'.$product->id, $request->file('image'));
+            $product->setRawAttributes(array_merge($product->getAttributes(), ['image' => $path]));
+            $product->save();
+        } catch (\Throwable $error) {
+            if ($path) {
+                $storage->delete('product-images', $path);
+            }
+            $product->delete();
+            throw $error;
+        }
 
         return response()->json([
             'message' => 'Product created successfully.',
@@ -96,7 +111,8 @@ class ProductController extends Controller
 
     public function update(
         Request $request,
-        Product $product
+        Product $product,
+        SupabaseStorageService $storage
     ): JsonResponse {
         $merchant = $request->user()->merchant;
 
@@ -112,11 +128,37 @@ class ProductController extends Controller
             'description' => ['nullable', 'string', 'max:1000'],
             'price' => ['sometimes', 'numeric', 'min:0'],
             'stock' => ['sometimes', 'integer', 'min:0'],
-            'image' => ['nullable', 'string', 'max:2048'],
+            'image' => ['sometimes', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'],
             'is_available' => ['sometimes', 'boolean'],
         ]);
 
-        $product->update($validated);
+        $image = $validated['image'] ?? null;
+        unset($validated['image']);
+        $oldPath = $product->getRawOriginal('image');
+        $newPath = $image
+            ? $storage->put('product-images', $merchant->id.'/'.$product->id, $image)
+            : null;
+
+        try {
+            DB::transaction(function () use ($product, $validated, $newPath) {
+                $product->update($validated);
+
+                if ($newPath) {
+                    $product->setRawAttributes(array_merge($product->getAttributes(), ['image' => $newPath]));
+                    $product->save();
+                }
+            });
+        } catch (\Throwable $error) {
+            if ($newPath) {
+                $storage->delete('product-images', $newPath);
+            }
+
+            throw $error;
+        }
+
+        if ($newPath && $oldPath && ! str_starts_with($oldPath, 'http')) {
+            $storage->delete('product-images', $oldPath);
+        }
 
         return response()->json([
             'message' => 'Product updated successfully.',
@@ -126,7 +168,8 @@ class ProductController extends Controller
 
     public function destroy(
         Request $request,
-        Product $product
+        Product $product,
+        SupabaseStorageService $storage
     ): JsonResponse {
         $merchant = $request->user()->merchant;
 

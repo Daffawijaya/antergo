@@ -88,7 +88,8 @@ class ServiceVariantTest extends TestCase
     {
         $user = $this->user('driver');
         $driver = Driver::create(['user_id' => $user->id, 'nik' => 'NIK'.$user->id, 'license_number' => 'SIM'.$user->id, 'status' => 'approved', 'is_online' => true]);
-        $driver->vehicle()->create(['type' => $type, 'brand' => 'Test', 'plate_number' => 'B'.$user->id]);
+        $vehicle = $driver->vehicles()->create(['type' => $type, 'brand' => 'Test', 'model' => 'Test', 'plate_number' => 'B'.$user->id, 'color' => 'Black', 'image_path' => 'fixture.jpg']);
+        $driver->update(['active_vehicle_id' => $vehicle->id]);
         $driver->location()->create(['latitude' => -6.2, 'longitude' => 106.8, 'updated_at' => now()]);
 
         return [$user, $driver];

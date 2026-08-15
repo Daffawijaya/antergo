@@ -140,6 +140,18 @@ class AdminController extends Controller
     public function updateDriverStatus(Request $request, Driver $driver, ExpoPushNotificationService $push): JsonResponse
     {
         $validated = $request->validate(['status' => ['required', Rule::in(['approved', 'rejected', 'suspended'])]]);
+        if ($validated['status'] === 'approved') {
+            $driver->load(['user', 'vehicles', 'documents']);
+            $types = $driver->documents->pluck('type');
+            $complete = $driver->user->getRawOriginal('avatar')
+                && $types->contains('ktp') && $driver->vehicles->isNotEmpty()
+                && $driver->vehicles->every(fn ($vehicle) => $vehicle->image_path
+                    && $types->contains($vehicle->type === 'car' ? 'sim_a' : 'sim_c'));
+            if (! $complete) {
+                return response()->json(['message' => 'Driver documents and vehicles are incomplete.'], 422);
+            }
+        }
+
         DB::transaction(function () use ($driver, $validated) {
             $driver->update([
                 'status' => $validated['status'],

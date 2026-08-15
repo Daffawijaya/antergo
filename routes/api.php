@@ -38,6 +38,8 @@ Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver')->group(func
     Route::post('/online', [DriverController::class, 'online']);
     Route::post('/offline', [DriverController::class, 'offline']);
     Route::post('/location', [DriverController::class, 'updateLocation']);
+    Route::post('/vehicles', [DriverController::class, 'addVehicle']);
+    Route::post('/vehicles/{vehicle}/active', [DriverController::class, 'setActiveVehicle']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver/orders')->group(function () {
@@ -81,6 +83,7 @@ Route::middleware('auth:sanctum')->post('/merchant', [MerchantController::class,
 
 Route::middleware(['auth:sanctum', 'role:merchant'])->prefix('merchant')->group(function () {
     Route::get('/me', [MerchantController::class, 'myMerchant']);
+    Route::post('/image', [MerchantController::class, 'updateImage']);
     Route::post('/open', [MerchantController::class, 'open']);
     Route::post('/close', [MerchantController::class, 'close']);
 

@@ -42,18 +42,27 @@ trait BuildsAnterGoSchema
 
         Schema::create('vehicles', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('driver_id')->unique()->constrained()->cascadeOnDelete();
+            $table->foreignId('driver_id')->constrained()->cascadeOnDelete();
             $table->enum('type', ['motorcycle', 'car']);
             $table->string('brand');
             $table->string('model')->nullable();
             $table->string('plate_number')->unique();
             $table->string('color')->nullable();
+            $table->text('image_path')->nullable();
             $table->timestamps();
+        });
+
+        Schema::table('drivers', fn (Blueprint $table) => $table->unsignedBigInteger('active_vehicle_id')->nullable());
+
+        Schema::create('driver_documents', function (Blueprint $table) {
+            $table->id(); $table->foreignId('driver_id')->constrained()->cascadeOnDelete();
+            $table->string('type'); $table->text('file_path'); $table->timestamps();
+            $table->unique(['driver_id', 'type']);
         });
 
         Schema::create('driver_locations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('driver_id')->unique()->constrained()->cascadeOnDelete();
+            $table->foreignId('driver_id')->constrained()->cascadeOnDelete();
             $table->decimal('latitude', 10, 7);
             $table->decimal('longitude', 10, 7);
             $table->decimal('heading', 5, 2)->nullable();
@@ -102,6 +111,8 @@ trait BuildsAnterGoSchema
             $table->string('order_number')->unique();
             $table->foreignId('user_id')->constrained()->restrictOnDelete();
             $table->foreignId('driver_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('vehicle_id')->nullable()->constrained()->nullOnDelete();
+            $table->json('vehicle_snapshot')->nullable();
             $table->foreignId('merchant_id')->nullable()->constrained()->nullOnDelete();
             $table->enum('type', ['ride', 'send', 'food'])->default('ride');
             $table->string('service_variant')->nullable();
@@ -175,6 +186,8 @@ trait BuildsAnterGoSchema
             $table->foreignId('order_id')->unique()->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('driver_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('vehicle_id')->nullable()->constrained()->nullOnDelete();
+            $table->json('vehicle_snapshot')->nullable();
             $table->foreignId('merchant_id')->nullable()->constrained()->nullOnDelete();
             $table->unsignedTinyInteger('rating');
             $table->text('comment')->nullable();

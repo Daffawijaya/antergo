@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Merchant;
 use App\Models\MerchantCategory;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -50,7 +51,7 @@ class MerchantController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, SupabaseStorageService $storage): JsonResponse
     {
         $validated = $request->validate([
             'category_id' => ['nullable', 'integer', 'exists:merchant_categories,id'],
@@ -60,6 +61,7 @@ class MerchantController extends Controller
             'address' => ['required', 'string', 'max:500'],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
             'longitude' => ['required', 'numeric', 'between:-180,180'],
+            'image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'],
         ]);
 
         $existingMerchant = Merchant::where(
@@ -74,28 +76,59 @@ class MerchantController extends Controller
             ], 422);
         }
 
-        $merchant = DB::transaction(function () use ($request, $validated) {
-            $merchant = Merchant::create([
-                'user_id' => $request->user()->id,
-                'category_id' => $validated['category_id'],
-                'name' => $validated['name'],
-                'description' => $validated['description'] ?? null,
-                'phone' => $validated['phone'],
-                'address' => $validated['address'],
-                'latitude' => $validated['latitude'],
-                'longitude' => $validated['longitude'],
-                'is_open' => false,
-                'is_active' => true,
-            ]);
-            $request->user()->addRole('merchant');
+        $uploadedPath = null;
+        try {
+            $merchant = DB::transaction(function () use ($request, $validated, $storage, &$uploadedPath) {
+                $merchant = Merchant::create([
+                    'user_id' => $request->user()->id,
+                    'category_id' => $validated['category_id'],
+                    'name' => $validated['name'],
+                    'description' => $validated['description'] ?? null,
+                    'phone' => $validated['phone'],
+                    'address' => $validated['address'],
+                    'latitude' => $validated['latitude'],
+                    'longitude' => $validated['longitude'],
+                    'is_open' => false,
+                    'is_active' => true,
+                ]);
+                $uploadedPath = $storage->put('merchant-images', (string) $merchant->id, $request->file('image'));
+                $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['logo' => $uploadedPath]));
+                $merchant->save();
+                $request->user()->addRole('merchant');
 
-            return $merchant;
-        });
+                return $merchant;
+            });
+        } catch (\Throwable $error) {
+            if ($uploadedPath) {
+                $storage->delete('merchant-images', $uploadedPath);
+            }
+            throw $error;
+        }
 
         return response()->json([
             'message' => 'Merchant created successfully.',
             'merchant' => $merchant->load('category'),
         ], 201);
+    }
+
+    public function updateImage(Request $request, SupabaseStorageService $storage): JsonResponse
+    {
+        $request->validate(['image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048']]);
+        $merchant = Merchant::where('user_id', $request->user()->id)->firstOrFail();
+        $oldPath = $merchant->getRawOriginal('logo');
+        $newPath = $storage->put('merchant-images', (string) $merchant->id, $request->file('image'));
+        try {
+            $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['logo' => $newPath]));
+            $merchant->save();
+        } catch (\Throwable $error) {
+            $storage->delete('merchant-images', $newPath);
+            throw $error;
+        }
+        if ($oldPath && ! str_starts_with($oldPath, 'http')) {
+            $storage->delete('merchant-images', $oldPath);
+        }
+
+        return response()->json(['merchant' => $merchant->fresh('category')]);
     }
 
     public function myMerchant(Request $request): JsonResponse

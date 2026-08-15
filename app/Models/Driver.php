@@ -12,21 +12,13 @@ class Driver extends Model
     protected $table = 'drivers';
 
     protected $fillable = [
-        'user_id',
-        'nik',
-        'license_number',
-        'status',
-        'is_online',
-        'rating',
-        'total_completed_orders',
+        'user_id', 'nik', 'license_number', 'status', 'is_online',
+        'rating', 'total_completed_orders', 'active_vehicle_id',
     ];
 
     protected function casts(): array
     {
-        return [
-            'is_online' => 'boolean',
-            'rating' => 'decimal:2',
-        ];
+        return ['is_online' => 'boolean', 'rating' => 'decimal:2'];
     }
 
     public function user()
@@ -34,9 +26,19 @@ class Driver extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function vehicles()
+    {
+        return $this->hasMany(Vehicle::class);
+    }
+
     public function vehicle()
     {
-        return $this->hasOne(Vehicle::class);
+        return $this->belongsTo(Vehicle::class, 'active_vehicle_id');
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(DriverDocument::class);
     }
 
     public function location()

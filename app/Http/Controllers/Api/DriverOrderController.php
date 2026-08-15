@@ -207,6 +207,12 @@ class DriverOrderController extends Controller
 
             $lockedOrder->update([
                 'driver_id' => $driver->id,
+                'vehicle_id' => $driver->active_vehicle_id,
+                'vehicle_snapshot' => $driver->vehicle ? [
+                    'id' => $driver->vehicle->id, 'type' => $driver->vehicle->type,
+                    'brand' => $driver->vehicle->brand, 'model' => $driver->vehicle->model,
+                    'plate_number' => $driver->vehicle->plate_number, 'color' => $driver->vehicle->color,
+                ] : null,
                 'status' => Order::STATUS_DRIVER_ASSIGNED,
             ]);
 

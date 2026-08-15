@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\SupabaseStorageService;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -32,6 +34,17 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
         ];
+    }
+
+    protected function avatar(): Attribute
+    {
+        return Attribute::get(function (?string $value) {
+            if (! $value || str_starts_with($value, 'http') || ! config('services.supabase_storage.url')) {
+                return $value;
+            }
+
+            return app(SupabaseStorageService::class)->publicUrl('driver-avatars', $value);
+        });
     }
 
     public function addresses()
@@ -100,6 +113,7 @@ class User extends Authenticatable
     {
         return $this->hasMany(PushDeviceToken::class);
     }
+
     public function notifications()
     {
         return $this->hasMany(Notification::class);
