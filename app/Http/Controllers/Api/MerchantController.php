@@ -14,7 +14,11 @@ class MerchantController extends Controller
     public function categories(): JsonResponse
     {
         return response()->json([
-            'categories' => MerchantCategory::query()->orderBy('name')->get(['id', 'name', 'slug']),
+            'categories' => MerchantCategory::query()
+                ->whereNotIn('slug', ['jasa', 'service', 'services'])
+                ->whereRaw('LOWER(name) <> ?', ['jasa'])
+                ->orderBy('name')
+                ->get(['id', 'name', 'slug']),
         ]);
     }
 
