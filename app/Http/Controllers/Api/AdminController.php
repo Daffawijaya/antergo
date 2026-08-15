@@ -45,7 +45,7 @@ class AdminController extends Controller
             ->latest()
             ->limit(10)
             ->get()
-            ->map(fn (Order $order) => $this->orderSummary($order));
+            ->map(fn(Order $order) => $this->orderSummary($order));
 
         return response()->json(['metrics' => $metrics, 'recent_orders' => $recentOrders]);
     }
@@ -68,10 +68,10 @@ class AdminController extends Controller
                         ->orWhere('phone', $this->searchOperator(), "%{$search}%");
                 });
             })
-            ->when(array_key_exists('active', $validated), fn (Builder $query) => $query->where('is_active', $validated['active']))
+            ->when(array_key_exists('active', $validated), fn(Builder $query) => $query->where('is_active', $validated['active']))
             ->latest()
             ->paginate($validated['per_page'] ?? 20);
-        $users->through(fn (User $user) => $this->userSummary($user));
+        $users->through(fn(User $user) => $this->userSummary($user));
 
         return response()->json($users);
     }
@@ -109,10 +109,10 @@ class AdminController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $drivers = Driver::query()
-            ->with(['user' => fn ($query) => $query->select($this->safeUserColumns()), 'vehicle'])
+            ->with(['user' => fn($query) => $query->select($this->safeUserColumns()), 'vehicle'])
             ->when($validated['search'] ?? null, function (Builder $query, string $search) {
                 $query->where(function (Builder $query) use ($search) {
-                    $query->whereHas('user', fn (Builder $query) => $query
+                    $query->whereHas('user', fn(Builder $query) => $query
                         ->where('name', $this->searchOperator(), "%{$search}%")
                         ->orWhere('email', $this->searchOperator(), "%{$search}%")
                         ->orWhere('phone', $this->searchOperator(), "%{$search}%"))
@@ -120,7 +120,7 @@ class AdminController extends Controller
                         ->orWhere('license_number', $this->searchOperator(), "%{$search}%");
                 });
             })
-            ->when($validated['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status))
+            ->when($validated['status'] ?? null, fn(Builder $query, string $status) => $query->where('status', $status))
             ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
             ->latest()
             ->paginate($validated['per_page'] ?? 20);
@@ -128,13 +128,72 @@ class AdminController extends Controller
         return response()->json($drivers);
     }
 
-    public function driver(Driver $driver): JsonResponse
-    {
-        return response()->json(['driver' => $driver->load([
-            'user' => fn ($query) => $query->select($this->safeUserColumns())->with('roles:id,user_id,role'),
-            'vehicle',
+    public function driver(
+        Driver $driver,
+        \App\Services\SupabaseStorageService $storage
+    ): JsonResponse {
+        $driver->load([
+            'user' => fn($query) => $query
+                ->select($this->safeUserColumns())
+                ->with('roles:id,user_id,role'),
+            'vehicles',
+            'documents',
             'location',
-        ])]);
+        ]);
+
+        $documents = $driver->documents->map(function ($document) use ($storage) {
+            return [
+                'id' => $document->id,
+                'type' => $document->type,
+                'uploaded' => true,
+                'url' => $storage->signedUrl(
+                    'driver-documents',
+                    $document->file_path,
+                    300
+                ),
+                'created_at' => $document->created_at,
+                'updated_at' => $document->updated_at,
+            ];
+        })->values();
+
+        $vehicles = $driver->vehicles->map(function ($vehicle) use ($storage) {
+            return [
+                'id' => $vehicle->id,
+                'type' => $vehicle->type,
+                'brand' => $vehicle->brand,
+                'model' => $vehicle->model,
+                'plate_number' => $vehicle->plate_number,
+                'color' => $vehicle->color,
+                'image_url' => $vehicle->image_path
+                    ? $storage->signedUrl(
+                        'driver-documents',
+                        $vehicle->image_path,
+                        300
+                    )
+                    : null,
+                'created_at' => $vehicle->created_at,
+                'updated_at' => $vehicle->updated_at,
+            ];
+        })->values();
+
+        return response()->json([
+            'driver' => [
+                'id' => $driver->id,
+                'user_id' => $driver->user_id,
+                'nik' => $driver->nik,
+                'status' => $driver->status,
+                'is_online' => $driver->is_online,
+                'rating' => $driver->rating,
+                'total_completed_orders' => $driver->total_completed_orders,
+                'active_vehicle_id' => $driver->active_vehicle_id,
+                'user' => $driver->user,
+                'documents' => $documents,
+                'vehicles' => $vehicles,
+                'location' => $driver->location,
+                'created_at' => $driver->created_at,
+                'updated_at' => $driver->updated_at,
+            ],
+        ]);
     }
 
     public function updateDriverStatus(Request $request, Driver $driver, ExpoPushNotificationService $push): JsonResponse
@@ -145,7 +204,7 @@ class AdminController extends Controller
             $types = $driver->documents->pluck('type');
             $complete = $driver->user->getRawOriginal('avatar')
                 && $types->contains('ktp') && $driver->vehicles->isNotEmpty()
-                && $driver->vehicles->every(fn ($vehicle) => $vehicle->image_path
+                && $driver->vehicles->every(fn($vehicle) => $vehicle->image_path
                     && $types->contains($vehicle->type === 'car' ? 'sim_a' : 'sim_c'));
             if (! $complete) {
                 return response()->json(['message' => 'Driver documents and vehicles are incomplete.'], 422);
@@ -184,15 +243,15 @@ class AdminController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $merchants = Merchant::query()
-            ->with(['user' => fn ($query) => $query->select($this->safeUserColumns()), 'category'])
+            ->with(['user' => fn($query) => $query->select($this->safeUserColumns()), 'category'])
             ->withCount(['products', 'orders'])
-            ->when($validated['search'] ?? null, fn (Builder $query, string $search) => $query
-                ->where(fn (Builder $query) => $query
+            ->when($validated['search'] ?? null, fn(Builder $query, string $search) => $query
+                ->where(fn(Builder $query) => $query
                     ->where('name', $this->searchOperator(), "%{$search}%")
                     ->orWhere('phone', $this->searchOperator(), "%{$search}%")
-                    ->orWhereHas('user', fn (Builder $query) => $query->where('email', $this->searchOperator(), "%{$search}%"))))
-            ->when(array_key_exists('active', $validated), fn (Builder $query) => $query->where('is_active', $validated['active']))
-            ->when($validated['category_id'] ?? null, fn (Builder $query, int $id) => $query->where('category_id', $id))
+                    ->orWhereHas('user', fn(Builder $query) => $query->where('email', $this->searchOperator(), "%{$search}%"))))
+            ->when(array_key_exists('active', $validated), fn(Builder $query) => $query->where('is_active', $validated['active']))
+            ->when($validated['category_id'] ?? null, fn(Builder $query, int $id) => $query->where('category_id', $id))
             ->latest()
             ->paginate($validated['per_page'] ?? 20);
 
@@ -202,8 +261,9 @@ class AdminController extends Controller
     public function merchant(Merchant $merchant): JsonResponse
     {
         return response()->json(['merchant' => $merchant->load([
-            'user' => fn ($query) => $query->select($this->safeUserColumns())->with('roles:id,user_id,role'),
-            'category', 'products',
+            'user' => fn($query) => $query->select($this->safeUserColumns())->with('roles:id,user_id,role'),
+            'category',
+            'products',
         ])->loadCount('orders')]);
     }
 
@@ -239,15 +299,15 @@ class AdminController extends Controller
         ]);
         $orders = Order::query()
             ->with($this->orderListRelations())
-            ->when($validated['search'] ?? null, fn (Builder $query, string $search) => $query->where('order_number', $this->searchOperator(), "%{$search}%"))
-            ->when($validated['type'] ?? null, fn (Builder $query, string $type) => $query->where('type', $type))
-            ->when($validated['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status))
-            ->when($validated['payment_status'] ?? null, fn (Builder $query, string $status) => $query->where('payment_status', $status))
-            ->when($validated['date_from'] ?? null, fn (Builder $query, string $date) => $query->whereDate('created_at', '>=', $date))
-            ->when($validated['date_to'] ?? null, fn (Builder $query, string $date) => $query->whereDate('created_at', '<=', $date))
+            ->when($validated['search'] ?? null, fn(Builder $query, string $search) => $query->where('order_number', $this->searchOperator(), "%{$search}%"))
+            ->when($validated['type'] ?? null, fn(Builder $query, string $type) => $query->where('type', $type))
+            ->when($validated['status'] ?? null, fn(Builder $query, string $status) => $query->where('status', $status))
+            ->when($validated['payment_status'] ?? null, fn(Builder $query, string $status) => $query->where('payment_status', $status))
+            ->when($validated['date_from'] ?? null, fn(Builder $query, string $date) => $query->whereDate('created_at', '>=', $date))
+            ->when($validated['date_to'] ?? null, fn(Builder $query, string $date) => $query->whereDate('created_at', '<=', $date))
             ->latest()
             ->paginate($validated['per_page'] ?? 20);
-        $orders->through(fn (Order $order) => $this->orderSummary($order));
+        $orders->through(fn(Order $order) => $this->orderSummary($order));
 
         return response()->json($orders);
     }
@@ -259,7 +319,7 @@ class AdminController extends Controller
             'items.product:id,name',
             'payment',
             'rating',
-            'statusHistories' => fn ($query) => $query->oldest('created_at'),
+            'statusHistories' => fn($query) => $query->oldest('created_at'),
         ]);
 
         return response()->json(['order' => $order]);
@@ -278,11 +338,16 @@ class AdminController extends Controller
     private function userSummary(User $user): array
     {
         return [
-            'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
-            'phone' => $user->phone, 'avatar' => $user->avatar, 'is_active' => $user->is_active,
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'avatar' => $user->avatar,
+            'is_active' => $user->is_active,
             'roles' => $user->roles->pluck('role')->values()->all(),
             'orders_count' => $user->orders_count ?? null,
-            'created_at' => $user->created_at, 'updated_at' => $user->updated_at,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at,
         ];
     }
 
@@ -294,8 +359,8 @@ class AdminController extends Controller
     private function orderListRelations(): array
     {
         return [
-            'user' => fn ($query) => $query->select($this->safeUserColumns()),
-            'driver.user' => fn ($query) => $query->select($this->safeUserColumns()),
+            'user' => fn($query) => $query->select($this->safeUserColumns()),
+            'driver.user' => fn($query) => $query->select($this->safeUserColumns()),
             'merchant:id,user_id,name,is_active,is_open',
         ];
     }
@@ -303,10 +368,16 @@ class AdminController extends Controller
     private function orderSummary(Order $order): array
     {
         return [
-            'id' => $order->id, 'order_number' => $order->order_number, 'type' => $order->type,
-            'status' => $order->status, 'payment_status' => $order->payment_status,
-            'customer' => $order->user, 'driver' => $order->driver, 'merchant' => $order->merchant,
-            'total_price' => $order->total_price, 'created_at' => $order->created_at,
+            'id' => $order->id,
+            'order_number' => $order->order_number,
+            'type' => $order->type,
+            'status' => $order->status,
+            'payment_status' => $order->payment_status,
+            'customer' => $order->user,
+            'driver' => $order->driver,
+            'merchant' => $order->merchant,
+            'total_price' => $order->total_price,
+            'created_at' => $order->created_at,
         ];
     }
 }
