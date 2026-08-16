@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
 use App\Http\Controllers\Api\FoodOrderController;
+use App\Http\Controllers\Api\GeocodeController;
 use App\Http\Controllers\Api\MerchantController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PaymentController;
@@ -74,6 +75,8 @@ Route::middleware(['auth:sanctum', 'role:customer'])->prefix('food/orders')->gro
 });
 
 Route::middleware(['auth:sanctum', 'role:customer'])->post('/shopping/orders', [FoodOrderController::class, 'storeShopping']);
+
+Route::get('/geocode', [GeocodeController::class, 'search']);
 
 Route::get('/merchant-categories', [MerchantController::class, 'categories']);
 Route::get('/merchants', [MerchantController::class, 'index']);
