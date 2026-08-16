@@ -21,6 +21,9 @@ class GeocodeController extends Controller
      * provided. Only places that actually match the query are returned — results
      * are never padded with unrelated nearby places. When Geoapify returns fewer
      * matches than the limit, Nominatim tops the rest up so searches stay complete.
+     * When the local search comes up short, a country-wide search tops the results
+     * up so far-away places (airports, destinations in other cities) still surface
+     * after the local matches.
      */
     public function search(Request $request): JsonResponse
     {
@@ -35,6 +38,44 @@ class GeocodeController extends Controller
         $hasReference = $lat !== false && $lon !== false;
         $reference = $hasReference ? [$lat, $lon] : null;
 
+        $results = $this->searchAll($query, $reference, $limit);
+
+        if ($hasReference) {
+            // Only query matches belong in the results — never top up with the
+            // places nearest to the user, even for vague queries. Restrict
+            // everything to the search radius, drop duplicates across sources,
+            // and sort the actual matches nearest-first.
+            $results = $this->localizeResults($results, $lat, $lon);
+
+            // The place the user means may be far away (e.g. an airport or a
+            // destination in another city), so when the local search comes up
+            // short, run a country-wide search for the missing slots and merge
+            // the extra matches in — local results still come first.
+            $remaining = $limit - count($results);
+            if ($remaining > 0) {
+                $wide = $this->searchAll($query, null, $remaining);
+                if ($wide !== []) {
+                    $results = $this->localizeResults(
+                        array_merge($results, $wide),
+                        $lat,
+                        $lon,
+                        null, // keep far-away matches, sorted nearest-first
+                    );
+                }
+            }
+        }
+
+        return response()->json(['data' => $results]);
+    }
+
+    /**
+     * Search the query through the app's own merchants, then Geoapify, then
+     * Nominatim, topping up with each next source until the limit is met.
+     * With a reference point the external sources restrict results to the
+     * search radius around it; without one they search the whole country.
+     */
+    private function searchAll(string $query, ?array $reference, int $limit): array
+    {
         $results = $this->searchMerchants($query, $reference, $limit);
         $remaining = $limit - count($results);
 
@@ -55,15 +96,7 @@ class GeocodeController extends Controller
             $results = array_merge($results, $external);
         }
 
-        if ($hasReference) {
-            // Only query matches belong in the results — never top up with the
-            // places nearest to the user, even for vague queries. Restrict
-            // everything to the search radius, drop duplicates across sources,
-            // and sort the actual matches nearest-first.
-            $results = $this->localizeResults($results, $lat, $lon);
-        }
-
-        return response()->json(['data' => $results]);
+        return $results;
     }
 
     /**
@@ -587,16 +620,17 @@ class GeocodeController extends Controller
     /**
      * Keep only results within the search radius around the reference point,
      * drop duplicates (the same place can come back from several sources), and
-     * sort the remaining matches nearest-first.
+     * sort the remaining matches nearest-first. Pass a null $maxDistance to
+     * keep every match (used for the country-wide fallback).
      */
-    private function localizeResults(array $results, float $lat, float $lon): array
+    private function localizeResults(array $results, float $lat, float $lon, ?float $maxDistance = self::SEARCH_RADIUS): array
     {
         $unique = [];
         foreach ($results as $item) {
             $itemLat = (float) ($item['coordinate']['latitude'] ?? $lat);
             $itemLon = (float) ($item['coordinate']['longitude'] ?? $lon);
             $distance = $item['distance'] ?? $this->distanceMeters($lat, $lon, $itemLat, $itemLon);
-            if ($distance > self::SEARCH_RADIUS) {
+            if ($maxDistance !== null && $distance > $maxDistance) {
                 continue;
             }
             $item['distance'] = $distance;

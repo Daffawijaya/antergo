@@ -67,14 +67,18 @@ class GeocodeTest extends TestCase
 
         $response = $this->getJson('/api/geocode?q=mimi&lat=-0.502&lon=117.153');
 
-        // The second Geoapify hit ("Mimi" in Bandung, ~1,000 km away) is beyond
-        // the search radius, so only the local match survives.
+        // The local match comes first; the far-away "Mimi" in Bandung
+        // (~1,000 km) is beyond the radius but still a real query match, so the
+        // country-wide fallback appends it after the local results.
         $response->assertOk()
-            ->assertJsonCount(1, 'data')
+            ->assertJsonCount(2, 'data')
             ->assertJsonPath('data.0.source', 'geoapify')
             ->assertJsonPath('data.0.name', 'Mimi Fried Chicken')
             ->assertJsonPath('data.0.distance', 0)
-            ->assertJsonPath('data.0.address', 'Jalan Pahlawan No. 1, Samarinda, Kalimantan Timur');
+            ->assertJsonPath('data.0.address', 'Jalan Pahlawan No. 1, Samarinda, Kalimantan Timur')
+            ->assertJsonPath('data.1.source', 'geoapify')
+            ->assertJsonPath('data.1.name', 'Mimi')
+            ->assertJsonPath('data.1.address', 'Jalan Soekarno Hatta, Bandung, Jawa Barat');
 
         Http::assertSent(function ($request) {
             $url = rawurldecode($request->url());
@@ -120,7 +124,7 @@ class GeocodeTest extends TestCase
             ->assertJsonPath('data.1.name', 'Mimi Ayam Geprek');
     }
 
-    public function test_search_drops_far_results_and_deduplicates(): void
+    public function test_search_keeps_local_first_and_deduplicates_with_far_fallback(): void
     {
         config(['services.geoapify.key' => 'test-key']);
 
@@ -144,7 +148,8 @@ class GeocodeTest extends TestCase
                             'formatted' => 'SMA Negeri 2 Tenggarong Seberang, Jalan Samarinda - Muara Kaman, Kerta Buana, Kutai Kartanegara, Indonesia',
                         ],
                     ],
-                    // Far away (~1,000 km) — must be dropped by the radius.
+                    // Far away (~1,000 km) — beyond the radius, so only the
+                    // country-wide fallback brings it back, after the local hit.
                     [
                         'properties' => [
                             'lat' => -6.9175,
@@ -160,10 +165,50 @@ class GeocodeTest extends TestCase
 
         $response = $this->getJson('/api/geocode?q=sman&lat=-0.3813551&lon=117.1147299&limit=10');
 
+        // The duplicate is dropped, the local hit ranks first, and the far match
+        // surfaces through the country-wide fallback without repeating the local one.
+        $response->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.name', 'SMA Negeri 2 Tenggarong Seberang')
+            ->assertJsonPath('data.0.source', 'geoapify')
+            ->assertJsonPath('data.1.name', 'SMAN 2 Bandung')
+            ->assertJsonPath('data.1.source', 'geoapify');
+    }
+
+    public function test_search_falls_back_country_wide_when_no_local_matches(): void
+    {
+        config(['services.geoapify.key' => 'test-key']);
+
+        Http::fake(function ($request) {
+            $url = rawurldecode($request->url());
+
+            // The radius-bounded pass finds nothing around the Samarinda reference.
+            if (str_contains($url, 'filter=circle:117.154,-0.502,20000')) {
+                return Http::response(['features' => []], 200);
+            }
+
+            // The country-wide fallback finds the airport in Balikpapan (~110 km).
+            return Http::response([
+                'features' => [[
+                    'properties' => [
+                        'lat' => -1.2683,
+                        'lon' => 116.8943,
+                        'name' => 'Bandara Sultan Aji Muhammad Sulaiman Sepinggan',
+                        'formatted' => 'Bandara Sultan Aji Muhammad Sulaiman Sepinggan, Jalan Marsma R. Iswahyudi, Sepinggan, Balikpapan, Kalimantan Timur, Indonesia',
+                    ],
+                ]],
+            ], 200);
+        });
+
+        $response = $this->getJson('/api/geocode?q=bandara sepinggan&lat=-0.502&lon=117.154');
+
+        // No local match within 20 km, so the airport beyond the radius must
+        // still surface through the country-wide search.
         $response->assertOk()
             ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.name', 'SMA Negeri 2 Tenggarong Seberang')
-            ->assertJsonPath('data.0.source', 'geoapify');
+            ->assertJsonPath('data.0.source', 'geoapify')
+            ->assertJsonPath('data.0.name', 'Bandara Sultan Aji Muhammad Sulaiman Sepinggan')
+            ->assertJsonPath('data.0.address', 'Jalan Marsma R. Iswahyudi, Sepinggan, Balikpapan, Kalimantan Timur');
     }
 
     public function test_search_bounds_nominatim_to_reference_area(): void
