@@ -44,6 +44,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver')->group(func
     Route::post('/location', [DriverController::class, 'updateLocation']);
     Route::post('/vehicles', [DriverController::class, 'addVehicle']);
     Route::post('/vehicles/{vehicle}/active', [DriverController::class, 'setActiveVehicle']);
+    Route::post('/documents', [DriverController::class, 'updateDocument']);
 });
 
 Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver/orders')->group(function () {

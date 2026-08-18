@@ -168,6 +168,18 @@ class DriverOrderController extends Controller
             ], 403);
         }
 
+        // Safety net for SIMs that expired while the driver was online.
+        $activeVehicle = $driver->vehicle;
+        if ($activeVehicle) {
+            $docType = $activeVehicle->type === 'car' ? 'sim_a' : 'sim_c';
+            $simDoc = $driver->documents()->where('type', $docType)->first();
+            if ($simDoc && $simDoc->expires_at?->isPast()) {
+                return response()->json([
+                    'message' => strtoupper(str_replace('_', ' ', $docType)).' sudah kedaluwarsa. Perbarui SIM Anda di Dokumen & SIM.',
+                ], 422);
+            }
+        }
+
         $result = DB::transaction(function () use ($driver, $order) {
             $lockedOrder = Order::whereKey($order->id)
                 ->lockForUpdate()

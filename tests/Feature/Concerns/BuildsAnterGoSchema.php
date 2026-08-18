@@ -57,7 +57,7 @@ trait BuildsAnterGoSchema
 
         Schema::create('driver_documents', function (Blueprint $table) {
             $table->id(); $table->foreignId('driver_id')->constrained()->cascadeOnDelete();
-            $table->string('type'); $table->text('file_path'); $table->timestamps();
+            $table->string('type'); $table->text('file_path'); $table->date('expires_at')->nullable(); $table->timestamps();
             $table->unique(['driver_id', 'type']);
         });
 

@@ -78,8 +78,12 @@ class DriverController extends Controller
         $d = $this->driver($r);
         $v = $r->validate(['type' => ['required', 'in:motorcycle,car'], 'brand' => ['required', 'string', 'max:100'], 'model' => ['required', 'string', 'max:100'], 'plate_number' => ['required', 'string', 'max:20', 'unique:vehicles,plate_number'], 'color' => ['required', 'string', 'max:50'], 'image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'], 'sim' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072']]);
         $docType = $v['type'] === 'car' ? 'sim_a' : 'sim_c';
-        if (! $d->documents()->where('type', $docType)->exists() && ! $r->hasFile('sim')) {
+        $existingDoc = $d->documents()->where('type', $docType)->first();
+        if (! $existingDoc && ! $r->hasFile('sim')) {
             throw ValidationException::withMessages(['sim' => [strtoupper(str_replace('_', ' ', $docType)).' wajib diunggah.']]);
+        }
+        if ($existingDoc && $existingDoc->expires_at?->isPast() && ! $r->hasFile('sim')) {
+            throw ValidationException::withMessages(['sim' => [strtoupper(str_replace('_', ' ', $docType)).' sudah kedaluwarsa ('.$existingDoc->expires_at->toDateString().'). Perbarui SIM Anda di Dokumen & SIM.']]);
         }
 
         $uploaded = [];
@@ -92,7 +96,9 @@ class DriverController extends Controller
             if ($r->hasFile('sim')) {
                 $dp = $storage->put('driver-documents', $d->id.'/'.str_replace('_', '-', $docType), $r->file('sim'));
                 $uploaded[] = ['driver-documents', $dp];
-                $d->documents()->updateOrCreate(['type' => $docType], ['file_path' => $dp]);
+                // A freshly uploaded SIM has no known expiry yet; it must be
+                // set from Dokumen & SIM.
+                $d->documents()->updateOrCreate(['type' => $docType], ['file_path' => $dp, 'expires_at' => null]);
             }
             if (! $d->active_vehicle_id) {
                 $d->update(['active_vehicle_id' => $vehicle->id]);
@@ -109,10 +115,57 @@ class DriverController extends Controller
         return response()->json(['vehicle' => $vehicle, 'driver' => $this->present($d->fresh(['vehicles', 'vehicle', 'documents']))], 201);
     }
 
+    public function updateDocument(Request $r, SupabaseStorageService $storage): JsonResponse
+    {
+        $d = $this->driver($r);
+
+        $v = $r->validate([
+            'type' => ['required', 'in:ktp,sim_a,sim_c'],
+            'photo' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'],
+            'expires_at' => ['nullable', 'date'],
+        ]);
+
+        $doc = $d->documents()->where('type', $v['type'])->first();
+        $oldPath = $doc?->getRawOriginal('file_path');
+
+        if (! $r->hasFile('photo') && ! $doc) {
+            throw ValidationException::withMessages(['photo' => ['Upload foto dokumen terlebih dahulu.']]);
+        }
+
+        $newPath = $r->hasFile('photo')
+            ? $storage->put('driver-documents', $d->id.'/'.str_replace('_', '-', $v['type']), $r->file('photo'))
+            : null;
+
+        try {
+            $doc = $d->documents()->updateOrCreate(
+                ['type' => $v['type']],
+                [
+                    'file_path' => $newPath ?? $oldPath,
+                    'expires_at' => $v['expires_at'] ?? $doc?->expires_at?->toDateString(),
+                ]
+            );
+        } catch (\Throwable $error) {
+            if ($newPath) {
+                $storage->delete('driver-documents', $newPath);
+            }
+            throw $error;
+        }
+
+        if ($oldPath && $newPath && $oldPath !== $newPath) {
+            $storage->delete('driver-documents', $oldPath);
+        }
+
+        return response()->json([
+            'message' => 'Dokumen driver diperbarui.',
+            'driver' => $this->present($d->fresh(['user', 'vehicles', 'vehicle', 'documents'])),
+        ]);
+    }
+
     public function setActiveVehicle(Request $r, Vehicle $vehicle): JsonResponse
     {
         $d = $this->driver($r);
         abort_unless($vehicle->driver_id === $d->id, 404);
+        $this->assertVehicleSimValid($d, $vehicle);
         $d->update(['active_vehicle_id' => $vehicle->id]);
 
         return response()->json(['driver' => $this->present($d->fresh(['vehicles', 'vehicle', 'documents']))]);
@@ -131,6 +184,10 @@ class DriverController extends Controller
             } else {
                 return response()->json(['message' => 'Pilih kendaraan aktif terlebih dahulu.'], 422);
             }
+        }
+        $vehicle = $d->vehicles()->whereKey($d->active_vehicle_id)->first();
+        if ($vehicle) {
+            $this->assertVehicleSimValid($d, $vehicle);
         }
         $d->update(['is_online' => true]);
 
@@ -167,6 +224,18 @@ class DriverController extends Controller
         return $d;
     }
 
+    private function assertVehicleSimValid(Driver $d, Vehicle $vehicle): void
+    {
+        $docType = $vehicle->type === 'car' ? 'sim_a' : 'sim_c';
+        $doc = $d->documents()->where('type', $docType)->first();
+
+        if ($doc && $doc->expires_at?->isPast()) {
+            throw ValidationException::withMessages([
+                'sim' => [strtoupper(str_replace('_', ' ', $docType)).' sudah kedaluwarsa ('.$doc->expires_at->toDateString().'). Perbarui SIM Anda di Dokumen & SIM.'],
+            ]);
+        }
+    }
+
     private function validateLicenses(array $vehicles, bool $a, bool $c): void
     {
         $types = collect($vehicles)->pluck('type');
@@ -187,8 +256,13 @@ class DriverController extends Controller
         if (! $d) {
             return null;
         }
-        $types = $d->documents?->pluck('type') ?? collect();
-        $d->setRelation('documents', $types->map(fn ($t) => ['type' => $t, 'uploaded' => true])->values());
+        $docs = $d->documents ?? collect();
+        $types = $docs->pluck('type');
+        $d->setRelation('documents', $docs->map(fn ($doc) => [
+            'type' => $doc->type,
+            'uploaded' => true,
+            'expires_at' => $doc->expires_at?->toDateString(),
+        ])->values());
         $d->setAttribute('document_profile_complete', $d->getRawOriginal('photo_url') && $types->contains('ktp') && $d->vehicles?->isNotEmpty() && $d->vehicles->every(fn ($v) => $v->image_path && $types->contains($v->type === 'car' ? 'sim_a' : 'sim_c')));
 
         return $d;

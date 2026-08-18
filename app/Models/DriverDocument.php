@@ -15,9 +15,14 @@ class DriverDocument extends Model
 
     public const TYPE_SIM_C = 'sim_c';
 
-    protected $fillable = ['driver_id', 'type', 'file_path'];
+    protected $fillable = ['driver_id', 'type', 'file_path', 'expires_at'];
 
     protected $hidden = ['file_path'];
+
+    protected function casts(): array
+    {
+        return ['expires_at' => 'date'];
+    }
 
     public function driver()
     {
