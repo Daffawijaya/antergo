@@ -92,7 +92,7 @@ class MerchantController extends Controller
                     'is_active' => true,
                 ]);
                 $uploadedPath = $storage->put('merchant-images', (string) $merchant->id, $request->file('image'));
-                $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['logo' => $uploadedPath]));
+                $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['photo_url' => $uploadedPath]));
                 $merchant->save();
                 $request->user()->addRole('merchant');
 
@@ -115,10 +115,10 @@ class MerchantController extends Controller
     {
         $request->validate(['image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048']]);
         $merchant = Merchant::where('user_id', $request->user()->id)->firstOrFail();
-        $oldPath = $merchant->getRawOriginal('logo');
+        $oldPath = $merchant->getRawOriginal('photo_url');
         $newPath = $storage->put('merchant-images', (string) $merchant->id, $request->file('image'));
         try {
-            $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['logo' => $newPath]));
+            $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['photo_url' => $newPath]));
             $merchant->save();
         } catch (\Throwable $error) {
             $storage->delete('merchant-images', $newPath);

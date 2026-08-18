@@ -15,6 +15,7 @@ class SupabaseStorageService
         'merchant-images',
         'product-images',
         'driver-avatars',
+        'customer-avatars',
     ];
 
     public const PRIVATE_BUCKETS = [
@@ -32,9 +33,11 @@ class SupabaseStorageService
             'image/jpeg',
             'image/png',
             'image/webp',
+            'image/heic',
+            'image/heif',
         ], true)) {
             throw new RuntimeException(
-                'Format gambar harus JPG, JPEG, PNG, atau WebP.'
+                'Format gambar harus JPG, JPEG, PNG, WebP, HEIC, atau HEIF.'
             );
         }
 

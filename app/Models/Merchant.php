@@ -13,7 +13,7 @@ class Merchant extends Model
 
     protected $table = 'merchants';
 
-    protected $fillable = ['user_id', 'category_id', 'name', 'description', 'phone', 'address', 'latitude', 'longitude', 'logo', 'is_open', 'is_active'];
+    protected $fillable = ['user_id', 'category_id', 'name', 'description', 'phone', 'address', 'latitude', 'longitude', 'photo_url', 'is_open', 'is_active'];
 
     protected $appends = ['image_url'];
 
@@ -22,14 +22,14 @@ class Merchant extends Model
         return ['latitude' => 'decimal:7', 'longitude' => 'decimal:7', 'is_open' => 'boolean', 'is_active' => 'boolean'];
     }
 
-    protected function logo(): Attribute
+    protected function photoUrl(): Attribute
     {
         return Attribute::get(fn (?string $v) => $this->mediaUrl($v));
     }
 
     protected function imageUrl(): Attribute
     {
-        return Attribute::get(fn () => $this->logo);
+        return Attribute::get(fn () => $this->photo_url);
     }
 
     private function mediaUrl(?string $v): ?string

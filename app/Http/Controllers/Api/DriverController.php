@@ -22,7 +22,7 @@ class DriverController extends Controller
 
     public function apply(Request $r, SupabaseStorageService $storage): JsonResponse
     {
-        $v = $r->validate(['nik' => ['required', 'digits:16', 'unique:drivers,nik'], 'avatar' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'], 'ktp' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'], 'sim_a' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'], 'sim_c' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'], 'vehicles' => ['required', 'array', 'min:1'], 'vehicles.*.type' => ['required', 'in:motorcycle,car'], 'vehicles.*.brand' => ['required', 'string', 'max:100'], 'vehicles.*.model' => ['required', 'string', 'max:100'], 'vehicles.*.plate_number' => ['required', 'string', 'max:20', 'distinct', 'unique:vehicles,plate_number'], 'vehicles.*.color' => ['required', 'string', 'max:50'], 'vehicle_images' => ['required', 'array'], 'vehicle_images.*' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048']]);
+        $v = $r->validate(['nik' => ['required', 'digits:16', 'unique:drivers,nik'], 'photo' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'], 'ktp' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'], 'sim_a' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'], 'sim_c' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072'], 'vehicles' => ['required', 'array', 'min:1'], 'vehicles.*.type' => ['required', 'in:motorcycle,car'], 'vehicles.*.brand' => ['required', 'string', 'max:100'], 'vehicles.*.model' => ['required', 'string', 'max:100'], 'vehicles.*.plate_number' => ['required', 'string', 'max:20', 'distinct', 'unique:vehicles,plate_number'], 'vehicles.*.color' => ['required', 'string', 'max:50'], 'vehicle_images' => ['required', 'array'], 'vehicle_images.*' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048']]);
         if ($r->user()->driver()->exists()) {
             throw ValidationException::withMessages(['driver' => ['You already have a driver application.']]);
         }
@@ -31,12 +31,10 @@ class DriverController extends Controller
         try {
             $driver = DB::transaction(function () use ($r, $v, $storage, &$uploaded) {
                 $d = Driver::create(['user_id' => $r->user()->id, 'nik' => $v['nik'], 'license_number' => 'PENDING-'.str()->random(20), 'status' => 'pending', 'is_online' => false]);
-                // The driver photo lives on the driver record, not on the user —
-                // users.avatar stays the customer photo so each role keeps its
-                // own picture (shown only when that role is active).
-                $avatar = $storage->put('driver-avatars', (string) $d->id, $r->file('avatar'));
-                $uploaded[] = ['driver-avatars', $avatar];
-                $d->update(['avatar' => $avatar]);
+                
+                $photo = $storage->put('driver-avatars', (string) $d->id, $r->file('photo'));
+                $uploaded[] = ['driver-avatars', $photo];
+                $d->update(['photo_url' => $photo]);
                 foreach (['ktp', 'sim_a', 'sim_c'] as $type) {
                     if (! $r->hasFile($type)) {
                         continue;
@@ -191,7 +189,7 @@ class DriverController extends Controller
         }
         $types = $d->documents?->pluck('type') ?? collect();
         $d->setRelation('documents', $types->map(fn ($t) => ['type' => $t, 'uploaded' => true])->values());
-        $d->setAttribute('document_profile_complete', $d->getRawOriginal('avatar') && $types->contains('ktp') && $d->vehicles?->isNotEmpty() && $d->vehicles->every(fn ($v) => $v->image_path && $types->contains($v->type === 'car' ? 'sim_a' : 'sim_c')));
+        $d->setAttribute('document_profile_complete', $d->getRawOriginal('photo_url') && $types->contains('ktp') && $d->vehicles?->isNotEmpty() && $d->vehicles->every(fn ($v) => $v->image_path && $types->contains($v->type === 'car' ? 'sim_a' : 'sim_c')));
 
         return $d;
     }

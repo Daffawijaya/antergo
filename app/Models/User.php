@@ -20,7 +20,6 @@ class User extends Authenticatable
         'email',
         'phone',
         'password',
-        'avatar',
         'is_active',
     ];
 
@@ -34,17 +33,6 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
         ];
-    }
-
-    protected function avatar(): Attribute
-    {
-        return Attribute::get(function (?string $value) {
-            if (! $value || str_starts_with($value, 'http') || ! config('services.supabase_storage.url')) {
-                return $value;
-            }
-
-            return app(SupabaseStorageService::class)->publicUrl('driver-avatars', $value);
-        });
     }
 
     public function addresses()
@@ -92,6 +80,11 @@ class User extends Authenticatable
     public function driver()
     {
         return $this->hasOne(Driver::class);
+    }
+
+    public function customerProfile()
+    {
+        return $this->hasOne(CustomerProfile::class);
     }
 
     public function merchant()

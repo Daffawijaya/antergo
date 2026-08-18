@@ -121,43 +121,35 @@ class AuthController extends Controller
             'email' => $user->email,
             'phone' => $user->phone,
             'roles' => $user->roleNames(),
-            // Each role keeps its own photo: users.avatar is the customer
-            // photo, drivers.avatar the driver photo, and the merchant logo is
-            // the merchant photo. Clients pick by the active role.
-            'avatar' => $user->avatar,
-            'driver_avatar' => $user->driver?->avatar,
-            'merchant_avatar' => $user->merchant?->image_url,
+            // Role-specific photos
+            'customer_photo' => $user->customerProfile?->photo_url,
+            'driver_photo' => $user->driver?->photo_url,
+            'merchant_photo' => $user->merchant?->photo_url,
             'is_active' => $user->is_active,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
         ];
     }
 
-    public function updateAvatar(Request $request, SupabaseStorageService $storage): JsonResponse
+    public function updateCustomerPhoto(Request $request, SupabaseStorageService $storage): JsonResponse
     {
-        $request->validate(['avatar' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048']]);
+        $request->validate(['photo' => ['required', 'image', 'mimes:jpeg,jpg,png,webp,heic,heif', 'max:5120']]);
 
         $user = $request->user();
-        $oldPath = $user->getRawOriginal('avatar');
+        $profile = $user->customerProfile()->firstOrCreate(['user_id' => $user->id]);
+        
+        $oldPath = $profile->getRawOriginal('photo_url');
+        
+        $newPath = $storage->put('customer-avatars', 'customers/'.$user->id, $request->file('photo'));
 
-        // Any format from the client is fine — the storage service always
-        // converts uploads to WebP (scaled down) so the file stays small.
-        $newPath = $storage->put('driver-avatars', 'users/'.$user->id, $request->file('avatar'));
-
-        try {
-            $user->setRawAttributes(array_merge($user->getAttributes(), ['avatar' => $newPath]));
-            $user->save();
-        } catch (\Throwable $error) {
-            $storage->delete('driver-avatars', $newPath);
-            throw $error;
-        }
+        $profile->update(['photo_url' => $newPath]);
 
         if ($oldPath && ! str_starts_with($oldPath, 'http')) {
-            $storage->delete('driver-avatars', $oldPath);
+            $storage->delete('customer-avatars', $oldPath);
         }
 
         return response()->json([
-            'message' => 'Avatar updated successfully',
+            'message' => 'Customer photo updated successfully',
             'user' => $this->userPayload($user->fresh()),
         ]);
     }
