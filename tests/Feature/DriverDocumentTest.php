@@ -24,7 +24,9 @@ class DriverDocumentTest extends TestCase
             'services.supabase_storage.url' => 'https://storage.test',
             'services.supabase_storage.service_key' => 'key',
         ]);
-        Http::fake(['https://storage.test/*' => Http::response(['Key' => 'stored'], 200)]);
+        Http::fake(fn ($request) => str_contains($request->url(), '/object/sign/')
+            ? Http::response(['signedURL' => 'https://storage.test/signed/abc'], 200)
+            : Http::response(['Key' => 'stored'], 200));
     }
 
     public function test_driver_can_upload_document_with_expiry_date(): void
@@ -103,6 +105,56 @@ class DriverDocumentTest extends TestCase
         ], ['Accept' => 'application/json'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('photo');
+    }
+
+    public function test_driver_can_list_documents_with_signed_photo_urls(): void
+    {
+        $user = $this->driver();
+        $user->driver->documents()->create([
+            'type' => 'sim_a',
+            'file_path' => '1/sim-a/x.webp',
+            'expires_at' => '2031-01-01',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/driver/documents')
+            ->assertOk()
+            ->assertJsonPath('documents.0.type', 'sim_a')
+            ->assertJsonPath('documents.0.uploaded', true)
+            ->assertJsonPath('documents.0.expires_at', '2031-01-01')
+            ->assertJsonPath('documents.0.photo_url', 'https://storage.test/signed/abc');
+    }
+
+    public function test_driver_can_delete_document_and_removes_file(): void
+    {
+        $user = $this->driver();
+        $user->driver->documents()->create([
+            'type' => 'ktp',
+            'file_path' => '1/ktp/delete-me.webp',
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->delete('/api/driver/documents/ktp', [], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('driver.documents', []);
+
+        $this->assertDatabaseMissing('driver_documents', [
+            'driver_id' => $user->driver->id,
+            'type' => 'ktp',
+        ]);
+        Http::assertSent(
+            fn ($request) => $request->method() === 'DELETE'
+                && str_contains($request->url(), 'delete-me.webp')
+        );
+    }
+
+    public function test_delete_invalid_document_type_is_rejected(): void
+    {
+        $user = $this->driver();
+        Sanctum::actingAs($user);
+
+        $this->delete('/api/driver/documents/paspor', [], ['Accept' => 'application/json'])
+            ->assertUnprocessable();
     }
 
     public function test_document_type_must_be_valid(): void

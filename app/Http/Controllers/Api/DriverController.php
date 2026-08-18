@@ -161,6 +161,48 @@ class DriverController extends Controller
         ]);
     }
 
+    public function documents(Request $r, SupabaseStorageService $storage): JsonResponse
+    {
+        $d = $this->driver($r);
+
+        $documents = $d->documents()->get()->map(fn ($doc) => [
+            'type' => $doc->type,
+            'uploaded' => true,
+            'expires_at' => $doc->expires_at?->toDateString(),
+            'photo_url' => $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path')),
+        ])->values();
+
+        return response()->json(['documents' => $documents]);
+    }
+
+    public function destroyDocument(Request $r, SupabaseStorageService $storage, string $type): JsonResponse
+    {
+        $d = $this->driver($r);
+
+        if (! in_array($type, ['ktp', 'sim_a', 'sim_c'], true)) {
+            return response()->json([
+                'message' => 'Jenis dokumen tidak valid.',
+            ], 422);
+        }
+
+        $doc = $d->documents()->where('type', $type)->first();
+
+        if (! $doc) {
+            return response()->json([
+                'message' => 'Dokumen tidak ditemukan.',
+            ], 404);
+        }
+
+        $path = $doc->getRawOriginal('file_path');
+        $doc->delete();
+        $storage->delete('driver-documents', $path);
+
+        return response()->json([
+            'message' => 'Dokumen dihapus.',
+            'driver' => $this->present($d->fresh(['user', 'vehicles', 'vehicle', 'documents'])),
+        ]);
+    }
+
     public function setActiveVehicle(Request $r, Vehicle $vehicle): JsonResponse
     {
         $d = $this->driver($r);
