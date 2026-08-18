@@ -79,10 +79,12 @@ class DriverController extends Controller
         $v = $r->validate(['type' => ['required', 'in:motorcycle,car'], 'brand' => ['required', 'string', 'max:100'], 'model' => ['required', 'string', 'max:100'], 'plate_number' => ['required', 'string', 'max:20', 'unique:vehicles,plate_number'], 'color' => ['required', 'string', 'max:50'], 'image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048'], 'sim' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:3072']]);
         $docType = $v['type'] === 'car' ? 'sim_a' : 'sim_c';
         $existingDoc = $d->documents()->where('type', $docType)->first();
-        if (! $existingDoc && ! $r->hasFile('sim')) {
-            throw ValidationException::withMessages(['sim' => [strtoupper(str_replace('_', ' ', $docType)).' wajib diunggah.']]);
+        // Block if driver has no SIM at all for this vehicle type.
+        if (! $existingDoc) {
+            throw ValidationException::withMessages(['type' => ['Anda belum memiliki '.strtoupper(str_replace('_', ' ', $docType)).'. Tambahkan SIM terlebih dahulu di Dokumen & SIM.']]);
         }
-        if ($existingDoc && $existingDoc->expires_at?->isPast() && ! $r->hasFile('sim')) {
+        // Allow SIM renewal only if the existing SIM is expired.
+        if ($existingDoc->expires_at?->isPast() && ! $r->hasFile('sim')) {
             throw ValidationException::withMessages(['sim' => [strtoupper(str_replace('_', ' ', $docType)).' sudah kedaluwarsa ('.$existingDoc->expires_at->toDateString().'). Perbarui SIM Anda di Dokumen & SIM.']]);
         }
 

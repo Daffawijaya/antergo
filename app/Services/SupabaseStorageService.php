@@ -152,6 +152,17 @@ class SupabaseStorageService
             );
         }
 
+        // Supabase REST API may return a relative path like
+        // "/object/sign/bucket/path?token=..." instead of the full
+        // "/storage/v1/object/sign/..." path. Prepend the missing
+        // prefix so the final URL points to the correct endpoint.
+        if (
+            ! str_starts_with($url, 'http')
+            && ! str_starts_with($url, '/storage/')
+        ) {
+            $url = '/storage/v1' . $url;
+        }
+
         return str_starts_with($url, 'http')
             ? $url
             : $this->endpoint($url);
