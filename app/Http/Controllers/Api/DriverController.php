@@ -165,12 +165,22 @@ class DriverController extends Controller
     {
         $d = $this->driver($r);
 
-        $documents = $d->documents()->get()->map(fn ($doc) => [
-            'type' => $doc->type,
-            'uploaded' => true,
-            'expires_at' => $doc->expires_at?->toDateString(),
-            'photo_url' => $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path')),
-        ])->values();
+        $documents = $d->documents()->get()->map(function ($doc) use ($storage) {
+            try {
+                $photoUrl = $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path'));
+            } catch (\Throwable) {
+                // A failed signed URL should not fail the whole list; the
+                // frontend still shows status and expiry without the preview.
+                $photoUrl = null;
+            }
+
+            return [
+                'type' => $doc->type,
+                'uploaded' => true,
+                'expires_at' => $doc->expires_at?->toDateString(),
+                'photo_url' => $photoUrl,
+            ];
+        })->values();
 
         return response()->json(['documents' => $documents]);
     }
