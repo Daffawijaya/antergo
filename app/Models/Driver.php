@@ -12,7 +12,7 @@ class Driver extends Model
     protected $table = 'drivers';
 
     protected $fillable = [
-        'user_id', 'nik', 'license_number', 'status', 'is_online',
+        'user_id', 'nik', 'avatar', 'license_number', 'status', 'is_online',
         'rating', 'total_completed_orders', 'active_vehicle_id',
     ];
 

@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -83,6 +85,34 @@ class AuthController extends Controller
         ]);
     }
 
+    public function update(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:100'],
+            'email' => [
+                'required',
+                'email',
+                'max:150',
+                Rule::unique('users', 'email')->ignore($user->id),
+            ],
+            'phone' => [
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('users', 'phone')->ignore($user->id),
+            ],
+        ]);
+
+        $user->update($validated);
+
+        return response()->json([
+            'message' => 'Profile updated successfully',
+            'user' => $this->userPayload($user->fresh()),
+        ]);
+    }
+
     private function userPayload(User $user): array
     {
         return [
@@ -91,11 +121,45 @@ class AuthController extends Controller
             'email' => $user->email,
             'phone' => $user->phone,
             'roles' => $user->roleNames(),
+            // Each role keeps its own photo: users.avatar is the customer
+            // photo, drivers.avatar the driver photo, and the merchant logo is
+            // the merchant photo. Clients pick by the active role.
             'avatar' => $user->avatar,
+            'driver_avatar' => $user->driver?->avatar,
+            'merchant_avatar' => $user->merchant?->image_url,
             'is_active' => $user->is_active,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
         ];
+    }
+
+    public function updateAvatar(Request $request, SupabaseStorageService $storage): JsonResponse
+    {
+        $request->validate(['avatar' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:2048']]);
+
+        $user = $request->user();
+        $oldPath = $user->getRawOriginal('avatar');
+
+        // Any format from the client is fine — the storage service always
+        // converts uploads to WebP (scaled down) so the file stays small.
+        $newPath = $storage->put('driver-avatars', 'users/'.$user->id, $request->file('avatar'));
+
+        try {
+            $user->setRawAttributes(array_merge($user->getAttributes(), ['avatar' => $newPath]));
+            $user->save();
+        } catch (\Throwable $error) {
+            $storage->delete('driver-avatars', $newPath);
+            throw $error;
+        }
+
+        if ($oldPath && ! str_starts_with($oldPath, 'http')) {
+            $storage->delete('driver-avatars', $oldPath);
+        }
+
+        return response()->json([
+            'message' => 'Avatar updated successfully',
+            'user' => $this->userPayload($user->fresh()),
+        ]);
     }
 
     public function logout(Request $request): JsonResponse

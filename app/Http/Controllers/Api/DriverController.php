@@ -31,10 +31,12 @@ class DriverController extends Controller
         try {
             $driver = DB::transaction(function () use ($r, $v, $storage, &$uploaded) {
                 $d = Driver::create(['user_id' => $r->user()->id, 'nik' => $v['nik'], 'license_number' => 'PENDING-'.str()->random(20), 'status' => 'pending', 'is_online' => false]);
+                // The driver photo lives on the driver record, not on the user —
+                // users.avatar stays the customer photo so each role keeps its
+                // own picture (shown only when that role is active).
                 $avatar = $storage->put('driver-avatars', (string) $d->id, $r->file('avatar'));
                 $uploaded[] = ['driver-avatars', $avatar];
-                $r->user()->setRawAttributes(array_merge($r->user()->getAttributes(), ['avatar' => $avatar]));
-                $r->user()->save();
+                $d->update(['avatar' => $avatar]);
                 foreach (['ktp', 'sim_a', 'sim_c'] as $type) {
                     if (! $r->hasFile($type)) {
                         continue;
@@ -189,7 +191,7 @@ class DriverController extends Controller
         }
         $types = $d->documents?->pluck('type') ?? collect();
         $d->setRelation('documents', $types->map(fn ($t) => ['type' => $t, 'uploaded' => true])->values());
-        $d->setAttribute('document_profile_complete', $d->user?->getRawOriginal('avatar') && $types->contains('ktp') && $d->vehicles?->isNotEmpty() && $d->vehicles->every(fn ($v) => $v->image_path && $types->contains($v->type === 'car' ? 'sim_a' : 'sim_c')));
+        $d->setAttribute('document_profile_complete', $d->getRawOriginal('avatar') && $types->contains('ktp') && $d->vehicles?->isNotEmpty() && $d->vehicles->every(fn ($v) => $v->image_path && $types->contains($v->type === 'car' ? 'sim_a' : 'sim_c')));
 
         return $d;
     }

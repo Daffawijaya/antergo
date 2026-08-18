@@ -164,8 +164,7 @@ class AdminApiTest extends TestCase
             'status' => $status, 'is_online' => false,
         ]);
 
-        $user->setRawAttributes(array_merge($user->getAttributes(), ['avatar' => 'avatar.jpg']));
-        $user->save();
+        $driver->update(['avatar' => 'avatar.jpg']);
         $vehicle = $driver->vehicles()->create([
             'type' => 'motorcycle', 'brand' => 'Honda', 'model' => 'Beat',
             'plate_number' => "B-{$suffix}", 'color' => 'Black', 'image_path' => 'vehicle.jpg',

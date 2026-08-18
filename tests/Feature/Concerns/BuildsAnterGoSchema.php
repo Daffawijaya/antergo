@@ -32,6 +32,7 @@ trait BuildsAnterGoSchema
             $table->id();
             $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
             $table->string('nik')->unique();
+            $table->text('avatar')->nullable();
             $table->string('license_number')->unique();
             $table->enum('status', ['pending', 'approved', 'rejected', 'suspended'])->default('pending');
             $table->boolean('is_online')->default(false);

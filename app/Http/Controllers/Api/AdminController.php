@@ -202,7 +202,7 @@ class AdminController extends Controller
         if ($validated['status'] === 'approved') {
             $driver->load(['user', 'vehicles', 'documents']);
             $types = $driver->documents->pluck('type');
-            $complete = $driver->user->getRawOriginal('avatar')
+            $complete = $driver->getRawOriginal('avatar')
                 && $types->contains('ktp') && $driver->vehicles->isNotEmpty()
                 && $driver->vehicles->every(fn($vehicle) => $vehicle->image_path
                     && $types->contains($vehicle->type === 'car' ? 'sim_a' : 'sim_c'));
