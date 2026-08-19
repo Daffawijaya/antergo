@@ -31,7 +31,8 @@ class ProductController extends Controller
             $query->where(function ($query) use ($search) {
                 $query
                     ->where('name', 'ilike', "%{$search}%")
-                    ->orWhere('description', 'ilike', "%{$search}%");
+                    ->orWhere('description', 'ilike', "%{$search}%")
+                    ->orWhereHas('merchant', fn ($q) => $q->where('name', 'ilike', "%{$search}%"));
             });
         }
 
