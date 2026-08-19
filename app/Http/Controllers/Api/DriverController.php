@@ -167,25 +167,54 @@ class DriverController extends Controller
     public function documents(Request $r, SupabaseStorageService $storage): JsonResponse
     {
         $d = $this->driver($r);
+        $docs = $d->documents()->get();
 
-        $documents = $d->documents()->get()->map(function ($doc) use ($storage) {
+        // Check cache for each doc URL, collect uncached ones
+        $cachedUrls = [];
+        $uncachedDocs = [];
+        $uncachedPaths = [];
+
+        foreach ($docs as $doc) {
             $cacheKey = 'driver_doc_url_' . $d->id . '_' . $doc->type;
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                $cachedUrls[$doc->type] = $cached;
+            } else {
+                $uncachedDocs[] = $doc;
+                $uncachedPaths[] = $doc->getRawOriginal('file_path');
+            }
+        }
 
+        // Batch-fetch uncached URLs in parallel (1 HTTP call per doc, but concurrent)
+        $fetchedUrls = [];
+        if (! empty($uncachedPaths)) {
             try {
-                $photoUrl = Cache::remember($cacheKey, 240, function () use ($storage, $doc) {
-                    return $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path'));
-                });
+                $fetchedUrls = $storage->signedUrls($uncachedPaths);
             } catch (\Throwable) {
-                // A failed signed URL should not fail the whole list; the
-                // frontend still shows status and expiry without the preview.
-                $photoUrl = null;
+                $fetchedUrls = array_fill(0, count($uncachedPaths), null);
             }
 
+            // Cache each newly fetched URL
+            foreach ($uncachedDocs as $i => $doc) {
+                $cacheKey = 'driver_doc_url_' . $d->id . '_' . $doc->type;
+                $url = $fetchedUrls[$i] ?? null;
+                if ($url) {
+                    Cache::put($cacheKey, $url, 240);
+                }
+                $fetchedUrls[$doc->type] = $url;
+                unset($fetchedUrls[$i]);
+            }
+        }
+
+        // Merge cached + fetched
+        $allUrls = array_merge($cachedUrls, $fetchedUrls);
+
+        $documents = $docs->map(function ($doc) use ($allUrls) {
             return [
                 'type' => $doc->type,
                 'uploaded' => true,
                 'expires_at' => $doc->expires_at?->toDateString(),
-                'photo_url' => $photoUrl,
+                'photo_url' => $allUrls[$doc->type] ?? null,
             ];
         })->values();
 

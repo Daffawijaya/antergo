@@ -132,7 +132,7 @@ class SupabaseStorageService
         string $path,
         int $expires = 300
     ): string {
-        $response = $this->request()
+        $response = $this->request(10)
             ->post(
                 $this->endpoint(
                     "/storage/v1/object/sign/{$bucket}/{$path}"
@@ -166,6 +166,71 @@ class SupabaseStorageService
         return str_starts_with($url, 'http')
             ? $url
             : $this->endpoint($url);
+    }
+
+    /**
+     * Fetch multiple signed URLs in parallel using Guzzle concurrent requests.
+     * Returns an array keyed by the original index.
+     */
+    public function signedUrls(array $paths, string $bucket = 'driver-documents', int $expires = 300): array
+    {
+        $key = config('services.supabase_storage.service_key');
+        if (! $key) {
+            throw new RuntimeException('SUPABASE_SERVICE_ROLE_KEY belum dikonfigurasi.');
+        }
+        $baseUrl = $this->endpoint("/storage/v1/object/sign/{$bucket}");
+
+        $client = new \GuzzleHttp\Client([
+            'base_uri' => $baseUrl,
+            'timeout' => 10,
+            'headers' => [
+                'Accept' => 'application/json',
+                'apikey' => $key,
+                'Authorization' => "Bearer {$key}",
+            ],
+        ]);
+
+        $promises = [];
+        foreach ($paths as $i => $path) {
+            $promises[$i] = $client->postAsync('/' . ltrim($path, '/'), [
+                'json' => ['expiresIn' => $expires],
+            ]);
+        }
+
+        $results = [];
+        \GuzzleHttp\Utils\each_limit($promises, 5, function ($response) use (&$results, $promises) {
+            foreach ($promises as $i => $promise) {
+                if ($promise->getState() === \GuzzleHttp\Promise\PromiseInterface::FULFILLED) {
+                    try {
+                        $body = json_decode((string) $response->getBody(), true);
+                        $url = $body['signedURL'] ?? $body['signedUrl'] ?? null;
+                        if (is_string($url) && $url !== '') {
+                            if (! str_starts_with($url, 'http') && ! str_starts_with($url, '/storage/')) {
+                                $url = '/storage/v1' . $url;
+                            }
+                            $results[$i] = str_starts_with($url, 'http') ? $url : $this->endpoint($url);
+                        } else {
+                            $results[$i] = null;
+                        }
+                    } catch (\Throwable) {
+                        $results[$i] = null;
+                    }
+                }
+            }
+        });
+
+        // Fallback: sequential fetch for any that failed
+        foreach ($paths as $i => $path) {
+            if (! isset($results[$i])) {
+                try {
+                    $results[$i] = $this->signedUrl($bucket, $path, $expires);
+                } catch (\Throwable) {
+                    $results[$i] = null;
+                }
+            }
+        }
+
+        return $results;
     }
 
     public function ensureBucket(
@@ -202,7 +267,7 @@ class SupabaseStorageService
             ->throw();
     }
 
-    private function request()
+    private function request(int $timeout = 30)
     {
         $key = config(
             'services.supabase_storage.service_key'
@@ -219,7 +284,7 @@ class SupabaseStorageService
                 'apikey' => $key,
                 'Authorization' => "Bearer {$key}",
             ])
-            ->timeout(30);
+            ->timeout($timeout);
     }
 
     private function endpoint(
