@@ -164,61 +164,48 @@ class DriverController extends Controller
         ]);
     }
 
-    public function documents(Request $r, SupabaseStorageService $storage): JsonResponse
+    public function documents(Request $r): JsonResponse
     {
         $d = $this->driver($r);
-        $docs = $d->documents()->get();
 
-        // Check cache for each doc URL, collect uncached ones
-        $cachedUrls = [];
-        $uncachedDocs = [];
-        $uncachedPaths = [];
-
-        foreach ($docs as $doc) {
-            $cacheKey = 'driver_doc_url_' . $d->id . '_' . $doc->type;
-            $cached = Cache::get($cacheKey);
-            if ($cached !== null) {
-                $cachedUrls[$doc->type] = $cached;
-            } else {
-                $uncachedDocs[] = $doc;
-                $uncachedPaths[] = $doc->getRawOriginal('file_path');
-            }
-        }
-
-        // Batch-fetch uncached URLs in parallel (1 HTTP call per doc, but concurrent)
-        $fetchedUrls = [];
-        if (! empty($uncachedPaths)) {
-            try {
-                $fetchedUrls = $storage->signedUrls($uncachedPaths);
-            } catch (\Throwable) {
-                $fetchedUrls = array_fill(0, count($uncachedPaths), null);
-            }
-
-            // Cache each newly fetched URL
-            foreach ($uncachedDocs as $i => $doc) {
-                $cacheKey = 'driver_doc_url_' . $d->id . '_' . $doc->type;
-                $url = $fetchedUrls[$i] ?? null;
-                if ($url) {
-                    Cache::put($cacheKey, $url, 240);
-                }
-                $fetchedUrls[$doc->type] = $url;
-                unset($fetchedUrls[$i]);
-            }
-        }
-
-        // Merge cached + fetched
-        $allUrls = array_merge($cachedUrls, $fetchedUrls);
-
-        $documents = $docs->map(function ($doc) use ($allUrls) {
-            return [
-                'type' => $doc->type,
-                'uploaded' => true,
-                'expires_at' => $doc->expires_at?->toDateString(),
-                'photo_url' => $allUrls[$doc->type] ?? null,
-            ];
-        })->values();
+        // Return metadata only — no signed URL calls.
+        // The frontend fetches photo_url on demand via documents/{type}/url.
+        $documents = $d->documents()->get()->map(fn ($doc) => [
+            'type' => $doc->type,
+            'uploaded' => true,
+            'expires_at' => $doc->expires_at?->toDateString(),
+            'photo_url' => null,
+        ])->values();
 
         return response()->json(['documents' => $documents]);
+    }
+
+    /**
+     * Return a cached signed URL for a single document.
+     * Called on-demand by the frontend when viewing a specific document.
+     */
+    public function documentUrl(Request $r, SupabaseStorageService $storage, string $type): JsonResponse
+    {
+        $d = $this->driver($r);
+
+        $doc = $d->documents()->where('type', $type)->first();
+        if (! $doc) {
+            return response()->json(['message' => 'Dokumen tidak ditemukan.'], 404);
+        }
+
+        $cacheKey = 'driver_doc_url_' . $d->id . '_' . $type;
+        $url = Cache::get($cacheKey);
+
+        if (! $url) {
+            try {
+                $url = $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path'));
+                Cache::put($cacheKey, $url, 240);
+            } catch (\Throwable) {
+                return response()->json(['message' => 'Gagal membuat URL dokumen.'], 500);
+            }
+        }
+
+        return response()->json(['photo_url' => $url]);
     }
 
     public function destroyDocument(Request $r, SupabaseStorageService $storage, string $type): JsonResponse

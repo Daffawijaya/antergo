@@ -45,6 +45,7 @@ Route::middleware(['auth:sanctum', 'role:driver'])->prefix('driver')->group(func
     Route::post('/vehicles', [DriverController::class, 'addVehicle']);
     Route::post('/vehicles/{vehicle}/active', [DriverController::class, 'setActiveVehicle']);
     Route::get('/documents', [DriverController::class, 'documents']);
+    Route::get('/documents/{type}/url', [DriverController::class, 'documentUrl']);
     Route::post('/documents', [DriverController::class, 'updateDocument']);
     Route::delete('/documents/{type}', [DriverController::class, 'destroyDocument']);
 });
