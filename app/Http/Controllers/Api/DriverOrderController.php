@@ -11,8 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class DriverOrderController extends Controller
-{
-    public function active(Request $request): JsonResponse
+{    public function active(Request $request): JsonResponse
     {
         $driver = Driver::where('user_id', $request->user()->id)->first();
 
@@ -22,41 +21,28 @@ class DriverOrderController extends Controller
             ], 404);
         }
 
+        // Use OR for each (type, status) pair — much more efficient than
+        // nested where/orWhere which forces an index-merge or full scan.
+        $activeStatuses = collect([
+            [Order::TYPE_RIDE, [Order::STATUS_DRIVER_ASSIGNED, Order::STATUS_DRIVER_ARRIVED, Order::STATUS_IN_PROGRESS]],
+            [Order::TYPE_SEND, [Order::STATUS_DRIVER_ASSIGNED, Order::STATUS_DRIVER_ARRIVED, Order::STATUS_PICKED_UP, Order::STATUS_DELIVERING]],
+            [Order::TYPE_FOOD, [Order::STATUS_DRIVER_ASSIGNED, Order::STATUS_PICKED_UP, Order::STATUS_DELIVERING]],
+        ]);
+
         $order = Order::with([
             'user:id,name',
             'merchant:id,name',
         ])
             ->select([
                 'id', 'order_number', 'type', 'status',
-                'pickup_address', 'destination_address',
-                'total_price', 'driver_id', 'merchant_id',
+                'pickup_address', 'destination_address', 'total_price', 'driver_id', 'merchant_id',
                 'user_id', 'created_at',
             ])
             ->where('driver_id', $driver->id)
-            ->where(function ($query) {
-                $query->where(function ($query) {
-                    $query->where('type', Order::TYPE_RIDE)
-                        ->whereIn('status', [
-                            Order::STATUS_DRIVER_ASSIGNED,
-                            Order::STATUS_DRIVER_ARRIVED,
-                            Order::STATUS_IN_PROGRESS,
-                        ]);
-                })->orWhere(function ($query) {
-                    $query->where('type', Order::TYPE_SEND)
-                        ->whereIn('status', [
-                            Order::STATUS_DRIVER_ASSIGNED,
-                            Order::STATUS_DRIVER_ARRIVED,
-                            Order::STATUS_PICKED_UP,
-                            Order::STATUS_DELIVERING,
-                        ]);
-                })->orWhere(function ($query) {
-                    $query->where('type', Order::TYPE_FOOD)
-                        ->whereIn('status', [
-                            Order::STATUS_DRIVER_ASSIGNED,
-                            Order::STATUS_PICKED_UP,
-                            Order::STATUS_DELIVERING,
-                        ]);
-                });
+            ->where(function ($query) use ($activeStatuses) {
+                foreach ($activeStatuses as [$type, $statuses]) {
+                    $query->orWhere(fn ($q) => $q->where('type', $type)->whereIn('status', $statuses));
+                }
             })
             ->latest()
             ->first();
@@ -90,9 +76,7 @@ class DriverOrderController extends Controller
                 ->latest()
                 ->paginate(10)
         );
-    }
-
-    public function available(Request $request): JsonResponse
+    }    public function available(Request $request): JsonResponse
     {
         $driver = Driver::where('user_id', $request->user()->id)
             ->where('status', 'approved')
@@ -112,16 +96,29 @@ class DriverOrderController extends Controller
             ], 422);
         }
 
-        $driverLatitude = (float) $driver->location->latitude;
-        $driverLongitude = (float) $driver->location->longitude;
+        $driverLat = (float) $driver->location->latitude;
+        $driverLng = (float) $driver->location->longitude;
+
+        // Haversine distance formula in SQL — avoids loading all orders
+        // into PHP and calculating distance there.  The formula returns
+        // the approximate distance in kilometres.
+        $earthRadius = 6371; // km
+        $latDiff = 'RADIANS(pickup_latitude - ' . $driverLat . ')';
+        $lngDiff = 'RADIANS(pickup_longitude - ' . $driverLng . ')';
+        $haversineA = "({latDiff}/2) * ({latDiff}/2) + COS(RADIANS({driverLat})) * COS(RADIANS(pickup_latitude)) * ({lngDiff}/2) * ({lngDiff}/2)";
+        $haversineA = str_replace(['{latDiff}', '{lngDiff}', '{driverLat}'], [$latDiff, $lngDiff, $driverLat], $haversineA);
+        $haversineC = "2 * ATAN2(SQRT({a}), SQRT(1 - {a}))";
+        $haversineC = str_replace('{a}', $haversineA, $haversineC);
+        $distanceExpr = "({earthRadius} * {$haversineC})";
+        $distanceExpr = str_replace('{earthRadius}', $earthRadius, $distanceExpr);
 
         $orders = Order::with(['merchant'])
             ->select([
                 'id', 'order_number', 'type', 'service_variant', 'vehicle_type',
                 'pickup_address', 'pickup_latitude', 'pickup_longitude',
-                'destination_address', 'total_price', 'status',
-                'created_at', 'merchant_id',
+                'destination_address', 'total_price', 'status', 'created_at', 'merchant_id',
             ])
+            ->selectRaw("ROUND({$distanceExpr}, 2) AS pickup_distance")
             ->where(function ($query) {
                 $query->where(function ($query) {
                     $query->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND])
@@ -141,29 +138,10 @@ class DriverOrderController extends Controller
             })
             ->whereNull('driver_id')
             ->when($driver->vehicle?->type, fn ($query, $vehicleType) => $query->where(fn ($orders) => $orders->whereNull('vehicle_type')->orWhere('vehicle_type', $vehicleType)))
-            ->latest()
+            ->havingRaw('pickup_distance <= ?', [10])
+            ->orderByRaw('pickup_distance ASC')
             ->limit(50)
             ->get();
-
-        $orders = $orders
-            ->map(function (Order $order) use ($driverLatitude, $driverLongitude) {
-                $orderLatitude = (float) $order->pickup_latitude;
-                $orderLongitude = (float) $order->pickup_longitude;
-
-                $distance = $this->calculateDistance(
-                    $driverLatitude,
-                    $driverLongitude,
-                    $orderLatitude,
-                    $orderLongitude
-                );
-
-                $order->pickup_distance = round($distance, 2);
-
-                return $order;
-            })
-            ->filter(fn (Order $order) => $order->pickup_distance <= 10)
-            ->sortBy('pickup_distance')
-            ->values();
 
         return response()->json([
             'orders' => $orders,

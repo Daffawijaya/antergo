@@ -8,6 +8,7 @@ use App\Models\Vehicle;
 use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -168,8 +169,12 @@ class DriverController extends Controller
         $d = $this->driver($r);
 
         $documents = $d->documents()->get()->map(function ($doc) use ($storage) {
+            $cacheKey = 'driver_doc_url_' . $d->id . '_' . $doc->type;
+
             try {
-                $photoUrl = $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path'));
+                $photoUrl = Cache::remember($cacheKey, 240, function () use ($storage, $doc) {
+                    return $storage->signedUrl('driver-documents', $doc->getRawOriginal('file_path'));
+                });
             } catch (\Throwable) {
                 // A failed signed URL should not fail the whole list; the
                 // frontend still shows status and expiry without the preview.

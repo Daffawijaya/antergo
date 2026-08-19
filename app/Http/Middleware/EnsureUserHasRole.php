@@ -12,7 +12,16 @@ class EnsureUserHasRole
     {
         $user = $request->user();
 
-        if (! $user || ! $user->hasAnyRole($roles)) {
+        if (! $user) {
+            abort(403, 'You are not authorized to perform this action.');
+        }
+
+        // Load roles once to avoid N+1 queries on subsequent hasRole calls
+        if (! $user->relationLoaded('roles')) {
+            $user->load('roles');
+        }
+
+        if (! $user->hasAnyRole($roles)) {
             abort(403, 'You are not authorized to perform this action.');
         }
 
