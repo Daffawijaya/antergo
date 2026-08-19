@@ -95,6 +95,8 @@ Route::middleware('auth:sanctum')->post('/merchant', [MerchantController::class,
 Route::middleware(['auth:sanctum', 'role:merchant'])->prefix('merchant')->group(function () {
     Route::get('/me', [MerchantController::class, 'myMerchant']);
     Route::post('/image', [MerchantController::class, 'updateImage']);
+    Route::post('/cover-image', [MerchantController::class, 'updateCoverImage']);
+    Route::delete('/cover-image', [MerchantController::class, 'destroyCoverImage']);
     Route::post('/open', [MerchantController::class, 'open']);
     Route::post('/close', [MerchantController::class, 'close']);
 

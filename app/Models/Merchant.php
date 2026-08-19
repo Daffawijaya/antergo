@@ -13,9 +13,14 @@ class Merchant extends Model
 
     protected $table = 'merchants';
 
-    protected $fillable = ['user_id', 'category_id', 'name', 'description', 'phone', 'address', 'latitude', 'longitude', 'photo_url', 'is_open', 'is_active'];
+    protected $fillable = ['user_id', 'category_id', 'name', 'description', 'phone', 'address', 'latitude', 'longitude', 'photo_url', 'cover_image', 'is_open', 'is_active'];
 
-    protected $appends = ['image_url'];
+    protected $appends = ['image_url', 'average_rating', 'rating_count'];
+
+    protected function coverImage(): Attribute
+    {
+        return Attribute::get(fn (?string $v) => $this->mediaUrl($v));
+    }
 
     protected function casts(): array
     {
@@ -30,6 +35,21 @@ class Merchant extends Model
     protected function imageUrl(): Attribute
     {
         return Attribute::get(fn () => $this->photo_url);
+    }
+
+    protected function coverImageUrl(): Attribute
+    {
+        return Attribute::get(fn () => $this->cover_image);
+    }
+
+    protected function averageRating(): Attribute
+    {
+        return Attribute::get(fn () => round((float) $this->ratings()->avg('rating'), 1));
+    }
+
+    protected function ratingCount(): Attribute
+    {
+        return Attribute::get(fn () => (int) $this->ratings()->count());
     }
 
     private function mediaUrl(?string $v): ?string

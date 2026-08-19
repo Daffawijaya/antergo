@@ -13,13 +13,13 @@ class Product extends Model
 
     protected $table = 'products';
 
-    protected $fillable = ['merchant_id', 'product_type', 'name', 'description', 'price', 'stock', 'image', 'is_available'];
+    protected $fillable = ['merchant_id', 'product_type', 'category', 'name', 'description', 'price', 'stock', 'image', 'is_available'];
 
     protected $appends = ['image_url'];
 
     protected function casts(): array
     {
-        return ['price' => 'decimal:2', 'stock' => 'integer', 'is_available' => 'boolean'];
+        return ['price' => 'decimal:2', 'stock' => 'integer', 'is_available' => 'boolean', 'category' => 'string'];
     }
 
     protected function image(): Attribute

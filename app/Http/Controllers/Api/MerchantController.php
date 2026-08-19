@@ -178,14 +178,9 @@ class MerchantController extends Controller
             'message' => 'Merchant is now open.',
             'merchant' => $merchant->fresh(),
         ]);
-    }
-
-    public function close(Request $request): JsonResponse
+    }    public function close(Request $request): JsonResponse
     {
-        $merchant = Merchant::where(
-            'user_id',
-            $request->user()->id
-        )->first();
+        $merchant = Merchant::where('user_id', $request->user()->id)->first();
 
         if (! $merchant) {
             return response()->json([
@@ -201,5 +196,59 @@ class MerchantController extends Controller
             'message' => 'Merchant is now closed.',
             'merchant' => $merchant->fresh(),
         ]);
+    }
+
+    public function updateCoverImage(Request $request, SupabaseStorageService $storage): JsonResponse
+    {
+        $request->validate([
+            'cover_image' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+        ]);
+
+        $merchant = Merchant::where('user_id', $request->user()->id)->first();
+
+        if (! $merchant) {
+            return response()->json([
+                'message' => 'Merchant not found.',
+            ], 404);
+        }
+
+        $oldPath = $merchant->getRawOriginal('cover_image');
+        $newPath = $storage->put('merchant-images', (string) $merchant->id . '_cover', $request->file('cover_image'));
+
+        try {
+            $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['cover_image' => $newPath]));
+            $merchant->save();
+        } catch (\Throwable $error) {
+            $storage->delete('merchant-images', $newPath);
+            throw $error;
+        }
+
+        if ($oldPath && ! str_starts_with($oldPath, 'http')) {
+            $storage->delete('merchant-images', $oldPath);
+        }
+
+        return response()->json(['merchant' => $merchant->fresh('category')]);
+    }
+
+    public function destroyCoverImage(SupabaseStorageService $storage): JsonResponse
+    {
+        $merchant = Merchant::where('user_id', $request()->user()->id)->first();
+
+        if (! $merchant) {
+            return response()->json([
+                'message' => 'Merchant not found.',
+            ], 404);
+        }
+
+        $oldPath = $merchant->getRawOriginal('cover_image');
+
+        if ($oldPath && ! str_starts_with($oldPath, 'http')) {
+            $storage->delete('merchant-images', $oldPath);
+        }
+
+        $merchant->setRawAttributes(array_merge($merchant->getAttributes(), ['cover_image' => null]));
+        $merchant->save();
+
+        return response()->json(['merchant' => $merchant->fresh('category')]);
     }
 }

@@ -13,7 +13,12 @@ class ChatController extends Controller
     public function conversations(Request $request): JsonResponse
     {
         $user = $request->user();
-        $orders = Order::query()->with(['user:id,name,avatar', 'driver.user:id,name,avatar'])
+        $orders = Order::query()
+            ->with(['user:id,name', 'driver.user:id,name'])
+            ->select([
+                'id', 'order_number', 'type', 'status',
+                'user_id', 'driver_id', 'updated_at',
+            ])
             ->whereNotNull('driver_id')
             ->where(function ($query) use ($user) {
                 $query->where('user_id', $user->id)
@@ -21,7 +26,9 @@ class ChatController extends Controller
             })
             ->withCount(['chatMessages as unread_count' => fn ($query) => $query->where('sender_id', '!=', $user->id)->whereNull('read_at')])
             ->with(['chatMessages' => fn ($query) => $query->latest()->limit(1)->with('sender:id,name')])
-            ->latest('updated_at')->get();
+            ->latest('updated_at')
+            ->limit(50)
+            ->get();
 
         return response()->json(['conversations' => $orders]);
     }

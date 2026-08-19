@@ -23,13 +23,15 @@ class DriverOrderController extends Controller
         }
 
         $order = Order::with([
-            'user',
-            'driver.user',
-            'driver.vehicle',
-            'merchant',
-            'items',
-            'statusHistories',
+            'user:id,name',
+            'merchant:id,name',
         ])
+            ->select([
+                'id', 'order_number', 'type', 'status',
+                'pickup_address', 'destination_address',
+                'total_price', 'driver_id', 'merchant_id',
+                'user_id', 'created_at',
+            ])
             ->where('driver_id', $driver->id)
             ->where(function ($query) {
                 $query->where(function ($query) {
@@ -75,7 +77,13 @@ class DriverOrderController extends Controller
         }
 
         return response()->json(
-            Order::with(['user', 'merchant', 'items', 'statusHistories'])
+            Order::with(['user:id,name'])
+                ->select([
+                    'id', 'order_number', 'type', 'status',
+                    'pickup_address', 'destination_address',
+                    'total_price', 'created_at', 'completed_at',
+                    'user_id', 'driver_id',
+                ])
                 ->where('driver_id', $driver->id)
                 ->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND, Order::TYPE_FOOD])
                 ->whereIn('status', [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED])
@@ -107,7 +115,13 @@ class DriverOrderController extends Controller
         $driverLatitude = (float) $driver->location->latitude;
         $driverLongitude = (float) $driver->location->longitude;
 
-        $orders = Order::with(['merchant', 'items'])
+        $orders = Order::with(['merchant'])
+            ->select([
+                'id', 'order_number', 'type', 'service_variant', 'vehicle_type',
+                'pickup_address', 'pickup_latitude', 'pickup_longitude',
+                'destination_address', 'total_price', 'status',
+                'created_at', 'merchant_id',
+            ])
             ->where(function ($query) {
                 $query->where(function ($query) {
                     $query->whereIn('type', [Order::TYPE_RIDE, Order::TYPE_SEND])
@@ -128,6 +142,7 @@ class DriverOrderController extends Controller
             ->whereNull('driver_id')
             ->when($driver->vehicle?->type, fn ($query, $vehicleType) => $query->where(fn ($orders) => $orders->whereNull('vehicle_type')->orWhere('vehicle_type', $vehicleType)))
             ->latest()
+            ->limit(50)
             ->get();
 
         $orders = $orders
