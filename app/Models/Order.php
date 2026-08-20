@@ -16,6 +16,8 @@ class Order extends Model
 
     public const TYPE_FOOD = 'food';
 
+    public const TYPE_TITIP_BELI = 'titip_beli';
+
     public const VARIANT_BIKE = 'bike';
 
     public const VARIANT_CAR = 'car';
@@ -79,6 +81,8 @@ class Order extends Model
         'payment_method',
         'payment_status',
         'status',
+        'advance_amount',
+        'driver_note',
         'notes',
         'cancelled_reason',
         'completed_at',
@@ -96,6 +100,7 @@ class Order extends Model
             'delivery_fee' => 'decimal:2',
             'service_fee' => 'decimal:2',
             'total_price' => 'decimal:2',
+            'advance_amount' => 'decimal:2',
             'completed_at' => 'datetime',
             'vehicle_snapshot' => 'array',
         ];
@@ -175,5 +180,10 @@ class Order extends Model
     public function rating()
     {
         return $this->hasOne(Rating::class);
+    }
+
+    public function titipBeliLocations()
+    {
+        return $this->hasMany(TitipBeliLocation::class);
     }
 }
