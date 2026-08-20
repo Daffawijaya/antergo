@@ -4,14 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
-use App\Models\TitipBeliLocation;
+use App\Models\JastipLocation;
 use App\Services\OrderPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-class TitipBeliOrderController extends Controller
+class JastipOrderController extends Controller
 {
     public function __construct(private readonly OrderPricingService $pricing) {}
 
@@ -25,7 +25,9 @@ class TitipBeliOrderController extends Controller
             'purchase_locations.*.longitude' => ['required', 'numeric', 'between:-180,180'],
             'purchase_locations.*.items' => ['required', 'array', 'min:1'],
             'purchase_locations.*.items.*.name' => ['required', 'string', 'max:255'],
-            'purchase_locations.*.items.*.quantity' => ['nullable', 'string', 'max:100'],
+            'purchase_locations.*.items.*.quantity' => ['nullable', 'numeric', 'min:0'],
+            'purchase_locations.*.items.*.unit' => ['nullable', 'string', 'max:50'],
+            'purchase_locations.*.items.*.price' => ['nullable', 'numeric', 'min:0'],
             'purchase_locations.*.items.*.note' => ['nullable', 'string', 'max:500'],
             'destination_address' => ['required', 'string', 'max:500'],
             'destination_latitude' => ['required', 'numeric', 'between:-90,90'],
@@ -63,7 +65,7 @@ class TitipBeliOrderController extends Controller
             $order = Order::create([
                 'order_number' => 'AGT-'.strtoupper(Str::random(10)),
                 'user_id' => $request->user()->id,
-                'type' => Order::TYPE_TITIP_BELI,
+                'type' => Order::TYPE_JASTIP,
                 'service_variant' => 'delivery',
                 'vehicle_type' => 'motorcycle',
                 'pickup_address' => $locations[0]['address'],
@@ -86,7 +88,7 @@ class TitipBeliOrderController extends Controller
 
             // Create purchase locations and items
             foreach ($locations as $seq => $loc) {
-                $location = $order->titipBeliLocations()->create([
+                $location = $order->jastipLocations()->create([
                     'sequence' => $seq + 1,
                     'place_name' => $loc['place_name'],
                     'address' => $loc['address'],
@@ -98,6 +100,8 @@ class TitipBeliOrderController extends Controller
                     $location->items()->create([
                         'name' => $item['name'],
                         'quantity' => $item['quantity'] ?? null,
+                        'unit' => $item['unit'] ?? null,
+                        'price' => $item['price'] ?? null,
                         'note' => $item['note'] ?? null,
                     ]);
                 }
@@ -120,7 +124,7 @@ class TitipBeliOrderController extends Controller
 
         return response()->json([
             'message' => 'Buy for Me order created successfully.',
-            'order' => $order->load(['payment', 'statusHistories', 'titipBeliLocations.items']),
+            'order' => $order->load(['payment', 'statusHistories', 'jastipLocations.items']),
             'fare' => $this->pricing->sendBreakdown($totalDistance, 'motorcycle'),
         ], 201);
     }

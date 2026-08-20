@@ -14,7 +14,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PushNotificationController;
 use App\Http\Controllers\Api\RatingController;
 use App\Http\Controllers\Api\SendOrderController;
-use App\Http\Controllers\Api\TitipBeliOrderController;
+use App\Http\Controllers\Api\JastipOrderController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -78,7 +78,7 @@ Route::middleware(['auth:sanctum', 'role:customer,driver'])->group(function () {
 
 Route::middleware(['auth:sanctum', 'role:customer'])->post('/send/orders', [SendOrderController::class, 'store']);
 
-Route::middleware(['auth:sanctum', 'role:customer'])->post('/titip-beli/orders', [TitipBeliOrderController::class, 'store']);
+Route::middleware(['auth:sanctum', 'role:customer'])->post('/jastip/orders', [JastipOrderController::class, 'store']);
 
 Route::middleware(['auth:sanctum', 'role:customer'])->prefix('food/orders')->group(function () {
     Route::post('/', [FoodOrderController::class, 'store']);

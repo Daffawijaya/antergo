@@ -10,18 +10,18 @@ use Illuminate\Foundation\Testing\WithFaker;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
-use Tests\Feature\Concerns\BuildsAnterGoSchema;
+use Tests\Feature\Concerns\BuildsanterGoSchema;
 use Tests\TestCase;
 
 class SendOrderTest extends TestCase
 {
-    use BuildsAnterGoSchema;
+    use BuildsanterGoSchema;
     use WithFaker;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->buildAnterGoSchema();
+        $this->buildanterGoSchema();
         Http::fake(['https://exp.host/*' => Http::response(['data' => [['status' => 'ok']]])]);
     }
 

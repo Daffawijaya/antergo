@@ -7,17 +7,17 @@ use App\Models\Order;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
-use Tests\Feature\Concerns\BuildsAnterGoSchema;
+use Tests\Feature\Concerns\BuildsanterGoSchema;
 use Tests\TestCase;
 
 class ChatApiTest extends TestCase
 {
-    use BuildsAnterGoSchema;
+    use BuildsanterGoSchema;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->buildAnterGoSchema();
+        $this->buildanterGoSchema();
     }
 
     public function test_only_assigned_customer_and_driver_can_chat(): void

@@ -6,17 +6,17 @@ use App\Models\Merchant;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
-use Tests\Feature\Concerns\BuildsAnterGoSchema;
+use Tests\Feature\Concerns\BuildsanterGoSchema;
 use Tests\TestCase;
 
 class GeocodeTest extends TestCase
 {
-    use BuildsAnterGoSchema;
+    use BuildsanterGoSchema;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->buildAnterGoSchema();
+        $this->buildanterGoSchema();
         config(['services.geoapify.key' => null]);
     }
 

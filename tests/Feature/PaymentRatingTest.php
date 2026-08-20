@@ -10,18 +10,18 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\WithFaker;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
-use Tests\Feature\Concerns\BuildsAnterGoSchema;
+use Tests\Feature\Concerns\BuildsanterGoSchema;
 use Tests\TestCase;
 
 class PaymentRatingTest extends TestCase
 {
-    use BuildsAnterGoSchema;
+    use BuildsanterGoSchema;
     use WithFaker;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->buildAnterGoSchema();
+        $this->buildanterGoSchema();
     }
 
     public function test_order_creation_creates_server_authoritative_cash_payment(): void

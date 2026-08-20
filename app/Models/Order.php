@@ -16,7 +16,7 @@ class Order extends Model
 
     public const TYPE_FOOD = 'food';
 
-    public const TYPE_TITIP_BELI = 'titip_beli';
+    public const TYPE_JASTIP = 'jastip';
 
     public const VARIANT_BIKE = 'bike';
 
@@ -182,8 +182,8 @@ class Order extends Model
         return $this->hasOne(Rating::class);
     }
 
-    public function titipBeliLocations()
+    public function jastipLocations()
     {
-        return $this->hasMany(TitipBeliLocation::class);
+        return $this->hasMany(JastipLocation::class);
     }
 }

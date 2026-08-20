@@ -8,17 +8,17 @@ use App\Models\Product;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\Sanctum;
-use Tests\Feature\Concerns\BuildsAnterGoSchema;
+use Tests\Feature\Concerns\BuildsanterGoSchema;
 use Tests\TestCase;
 
 class ServiceVariantTest extends TestCase
 {
-    use BuildsAnterGoSchema;
+    use BuildsanterGoSchema;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->buildAnterGoSchema();
+        $this->buildanterGoSchema();
     }
 
     public function test_bike_and_car_store_vehicle_requirement_and_use_different_pricing(): void

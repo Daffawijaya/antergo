@@ -9,7 +9,7 @@ class EnsureSupabaseStorageBuckets extends Command
 {
     protected $signature = 'antergo:ensure-storage-buckets';
 
-    protected $description = 'Create required AnterGo Supabase Storage buckets when absent';
+    protected $description = 'Create required anterGo Supabase Storage buckets when absent';
 
     public function handle(SupabaseStorageService $storage): int
     {

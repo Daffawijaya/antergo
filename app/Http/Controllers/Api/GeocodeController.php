@@ -187,7 +187,7 @@ class GeocodeController extends Controller
 
         try {
             $response = Http::withHeaders([
-                'User-Agent' => 'AnterGoApp/1.0 (geocoding proxy)',
+                'User-Agent' => 'anterGoApp/1.0 (geocoding proxy)',
             ])->timeout(8)->acceptJson()->get('https://api.geoapify.com/v1/geocode/reverse', [
                 'lat' => $lat,
                 'lon' => $lon,
@@ -296,7 +296,7 @@ class GeocodeController extends Controller
 
         try {
             $response = Http::withHeaders([
-                'User-Agent' => 'AnterGoApp/1.0 (geocoding proxy)',
+                'User-Agent' => 'anterGoApp/1.0 (geocoding proxy)',
             ])->timeout(8)->acceptJson()->get('https://api.geoapify.com/v1/geocode/reverse', [
                 'lat' => $lat,
                 'lon' => $lon,
@@ -357,7 +357,7 @@ class GeocodeController extends Controller
     {
         try {
             $response = Http::withHeaders([
-                'User-Agent' => 'AnterGoApp/1.0 (geocoding proxy)',
+                'User-Agent' => 'anterGoApp/1.0 (geocoding proxy)',
             ])->timeout(8)->acceptJson()->get('https://nominatim.openstreetmap.org/reverse', [
                 'lat' => $lat,
                 'lon' => $lon,
@@ -471,7 +471,7 @@ class GeocodeController extends Controller
 
         try {
             $response = Http::withHeaders([
-                'User-Agent' => 'AnterGoApp/1.0 (geocoding proxy)',
+                'User-Agent' => 'anterGoApp/1.0 (geocoding proxy)',
             ])->timeout(8)->acceptJson()->get('https://api.geoapify.com/v1/geocode/autocomplete', array_filter([
                 'text' => $query,
                 'apiKey' => $apiKey,
@@ -534,7 +534,7 @@ class GeocodeController extends Controller
 
         try {
             $response = Http::withHeaders([
-                'User-Agent' => 'AnterGoApp/1.0 (geocoding proxy)',
+                'User-Agent' => 'anterGoApp/1.0 (geocoding proxy)',
             ])->timeout(8)->acceptJson()->get('https://nominatim.openstreetmap.org/search', $params);
 
             if (! $response->ok()) {

@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class TitipBeliItem extends Model
+class JastipItem extends Model
 {
     use HasFactory;
 
@@ -15,11 +15,13 @@ class TitipBeliItem extends Model
         'location_id',
         'name',
         'quantity',
+        'unit',
+        'price',
         'note',
     ];
 
     public function location()
     {
-        return $this->belongsTo(TitipBeliLocation::class, 'location_id');
+        return $this->belongsTo(JastipLocation::class, 'location_id');
     }
 }

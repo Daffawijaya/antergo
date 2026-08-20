@@ -16,18 +16,18 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
-use Tests\Feature\Concerns\BuildsAnterGoSchema;
+use Tests\Feature\Concerns\BuildsanterGoSchema;
 use Tests\TestCase;
 
-class AnterGoApiTest extends TestCase
+class anterGoApiTest extends TestCase
 {
-    use BuildsAnterGoSchema;
+    use BuildsanterGoSchema;
     use WithFaker;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->buildAnterGoSchema();
+        $this->buildanterGoSchema();
         config(['services.supabase_storage.url' => 'https://storage.test', 'services.supabase_storage.service_key' => 'test-key']);
         Http::fake(['https://storage.test/*' => Http::response(['Key' => 'stored'], 200)]);
     }

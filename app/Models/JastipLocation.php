@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class TitipBeliLocation extends Model
+class JastipLocation extends Model
 {
     use HasFactory;
 
@@ -35,6 +35,6 @@ class TitipBeliLocation extends Model
 
     public function items()
     {
-        return $this->hasMany(TitipBeliItem::class, 'location_id');
+        return $this->hasMany(JastipItem::class, 'location_id');
     }
 }

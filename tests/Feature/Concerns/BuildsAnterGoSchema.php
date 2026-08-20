@@ -5,9 +5,9 @@ namespace Tests\Feature\Concerns;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-trait BuildsAnterGoSchema
+trait BuildsanterGoSchema
 {
-    protected function buildAnterGoSchema(): void
+    protected function buildanterGoSchema(): void
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
