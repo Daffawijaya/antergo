@@ -89,6 +89,7 @@ Route::middleware(['auth:sanctum', 'role:customer'])->post('/shopping/orders', [
 Route::get('/geocode', [GeocodeController::class, 'search']);
 Route::get('/geocode/reverse', [GeocodeController::class, 'reverse']);
 Route::get('/geocode/nearby', [GeocodeController::class, 'nearby']);
+Route::get('/geocode/merchants-nearby', [GeocodeController::class, 'merchantsNearby']);
 
 Route::get('/merchant-categories', [MerchantController::class, 'categories']);
 Route::get('/merchants', [MerchantController::class, 'index']);

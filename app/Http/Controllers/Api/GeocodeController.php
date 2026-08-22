@@ -117,6 +117,77 @@ class GeocodeController extends Controller
     }
 
     /**
+     * List active, open merchants within the visible map viewport — used by
+     * the location picker to show store pins on the map. Accepts either:
+     *   - bounds: sw_lat, sw_lon, ne_lat, ne_lon (viewport bounding box)
+     *   - fallback: lat, lon, radius (center + radius)
+     */
+    public function merchantsNearby(Request $request): JsonResponse
+    {
+        $limit = min(max((int) $request->query('limit', 25), 1), 50);
+
+        $swLat = filter_var($request->query('sw_lat'), FILTER_VALIDATE_FLOAT);
+        $swLon = filter_var($request->query('sw_lon'), FILTER_VALIDATE_FLOAT);
+        $neLat = filter_var($request->query('ne_lat'), FILTER_VALIDATE_FLOAT);
+        $neLon = filter_var($request->query('ne_lon'), FILTER_VALIDATE_FLOAT);
+
+        $hasBounds = $swLat !== false && $swLon !== false && $neLat !== false && $neLon !== false;
+
+        $query = Merchant::query()
+            ->where('is_active', true)
+            ->where('is_open', true)
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->select(['id', 'name', 'latitude', 'longitude', 'category_id']);
+
+        if ($hasBounds) {
+            // Viewport bounding box query — only merchants visible on screen
+            $query->whereBetween('latitude', [min($swLat, $neLat), max($swLat, $neLat)])
+                ->whereBetween('longitude', [min($swLon, $neLon), max($swLon, $neLon)]);
+        } else {
+            // Fallback: center + radius
+            $lat = filter_var($request->query('lat'), FILTER_VALIDATE_FLOAT);
+            $lon = filter_var($request->query('lon'), FILTER_VALIDATE_FLOAT);
+            if ($lat === false || $lon === false) {
+                return response()->json(['message' => 'Parameter (sw_lat,sw_lon,ne_lat,ne_lon) atau (lat,lon) wajib diisi.'], 422);
+            }
+            $radius = min(max((float) ($request->query('radius', 3000)), 500), 10000);
+            $merchants = $query->get();
+            $results = [];
+            foreach ($merchants as $merchant) {
+                $mLat = (float) $merchant->latitude;
+                $mLon = (float) $merchant->longitude;
+                $distance = $this->distanceMeters($lat, $lon, $mLat, $mLon);
+                if ($distance <= $radius) {
+                    $results[] = [
+                        'id' => $merchant->id,
+                        'name' => $merchant->name,
+                        'coordinate' => ['latitude' => $mLat, 'longitude' => $mLon],
+                        'distance' => $distance,
+                        'category_id' => $merchant->category_id,
+                    ];
+                }
+            }
+            usort($results, fn ($a, $b) => $a['distance'] <=> $b['distance']);
+            return response()->json(['data' => array_slice($results, 0, $limit)]);
+        }
+
+        $merchants = $query->limit($limit)->get();
+
+        $results = [];
+        foreach ($merchants as $merchant) {
+            $results[] = [
+                'id' => $merchant->id,
+                'name' => $merchant->name,
+                'coordinate' => ['latitude' => (float) $merchant->latitude, 'longitude' => (float) $merchant->longitude],
+                'category_id' => $merchant->category_id,
+            ];
+        }
+
+        return response()->json(['data' => $results]);
+    }
+
+    /**
      * Reverse-geocode a coordinate into a human-readable label, in priority
      * order:
      *   1. A nearby named place (mosque, minimarket, school, ...) — shown with
